@@ -81,6 +81,16 @@ void* map_shared_page(vm_t* vm, uintptr_t ipa, seL4_CapRights_t rights);
  */
 void* map_emulated_device(vm_t* vm, const struct device *d);
 
+/**
+ * Map a device memory region that can be used by multiple VMs.
+ * A device can be mapped to multiple VMs, and each VM still
+ * keeps its own private view of the device without trapping
+ * accesses. The VGIC VCPU interface is an example.
+ * @param[in] vm    The VM to map to
+ * @param[in] d     A description of the device
+ * @return          The virtual address of the mapping
+ */
+void* map_multi_map_device(vm_t* vm, uintptr_t pa, uintptr_t va, seL4_CapRights_t rights, struct device* d);
 
 /**
  * Check if a physical address should be handled by the provided device

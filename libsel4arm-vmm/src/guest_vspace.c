@@ -73,10 +73,6 @@ guest_vspace_map(vspace_t *vspace, seL4_CPtr cap, void *vaddr, seL4_CapRights_t 
             ZF_LOGE("Failed to map page into iospace %d", i);
             return error;
         }
-
-        /* Store the slot of the frame cap copy in a vspace so they can be looked up and
-         * freed when this address gets unmapped. */
-        error = update_entries(&guest_iospace->iospace_vspace, (uintptr_t)vaddr, new_path.capPtr, size_bits, 0 /* cookie */);
         if (error) {
             ZF_LOGE("Failed to add iospace mapping information");
             return error;

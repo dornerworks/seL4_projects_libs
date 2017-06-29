@@ -243,7 +243,7 @@ copy_in_page(vspace_t *vmm_vspace, vspace_t *vm_vspace, vka_t* vka, void* dest, 
 static int
 copy_in(vspace_t *dst_vspace, vspace_t *src_vspace, vka_t* vka, void* dest, uintptr_t src, size_t size)
 {
-    DCOPYIN("copy in 0x%x->0x%x (0x%x bytes)\n", (uint32_t)src, (uint32_t)dest, size);
+    DCOPYIN("copy in 0x%lx->0x%lx (0x%lx bytes)\n", (long unsigned int)src, (long unsigned int)dest, size);
     while (size) {
         int seg_size;
         seg_size = copy_in_page(dst_vspace, src_vspace, vka, dest, (void*)src, size);

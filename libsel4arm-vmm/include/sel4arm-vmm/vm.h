@@ -61,6 +61,8 @@ struct vm {
     struct reboot_hooks rb_hooks[MAX_REBOOT_HOOKS_PER_VM];
     int nhooks;
 
+    uintptr_t linux_base;
+
     /* Other */
     void *entry_point;
     /* Fault structure */

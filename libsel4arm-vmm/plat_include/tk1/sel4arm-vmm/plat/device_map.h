@@ -14,7 +14,7 @@
 
 /***** Physical Map ****/
 #define RAM_BASE  0x80000000
-#define RAM_END   0xC0000000
+#define RAM_END   0x90000000
 #define RAM_SIZE (RAM_END - RAM_BASE)
 
 #define USB1_PADDR              0x7d000000

@@ -44,6 +44,18 @@ enum devid {
     DEV_CONSOLE = DEV_UART3
 };
 
+typedef enum {
+    /* no special attributes */
+    DEV_ATTR_NONE,
+    /* the device is emulated */
+    DEV_ATTR_EMU,
+    /* The device is mapped to multiple VMs, but
+     * when switching between VMs, each VM should
+     * presever its own private views of the device;
+     * an example is the VGIC VCPU device.
+     */
+    DEV_ATTR_MULTI_MAP,
+} dev_attr_t;
 
 /**
  * Device description
@@ -51,6 +63,8 @@ enum devid {
 struct device {
 /// Logical identifier for internal use
     enum devid devid;
+/// attribuites of the device
+    dev_attr_t attr;
 /// A string representation of the device. Useful for debugging
     const char* name;
 /// The physical address of the device */

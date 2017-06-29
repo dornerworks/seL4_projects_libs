@@ -483,7 +483,7 @@ vgic_dist_set_pending_irq(struct device* d, vm_t* vm, int irq)
         return err;
     } else {
         /* No further action */
-        DDIST("IRQ not enabled (%d)\n", irq);
+        DDIST("IRQ not enabled (%d) for %s\n", irq, vm->name);
     }
 
 #ifdef CONFIG_LIB_SEL4_ARM_VMM_VCHAN_SUPPORT
@@ -703,7 +703,7 @@ vm_inject_IRQ(virq_handle_t virq)
 
     // vm->lock();
 
-    DIRQ("VM received IRQ %d\n", virq->virq);
+    DIRQ("VM (%s) received IRQ %d\n", vm->name, virq->virq);
 
     /* Grab a handle to the VGIC */
     vgic_device = vm_find_device_by_id(vm, DEV_VGIC_DIST);
@@ -763,7 +763,18 @@ vm_install_vgic(vm_t* vm)
 
     /* Remap VCPU to CPU */
     vcpu = dev_vgic_vcpu;
-    addr = map_vm_device(vm, vcpu.pstart, dev_vgic_cpu.pstart, seL4_AllRights);
+    if (vcpu.attr & DEV_ATTR_MULTI_MAP) {
+        addr = map_multi_map_device(vm, vcpu.pstart, dev_vgic_cpu.pstart, seL4_AllRights, &vcpu);
+    } else {
+        addr = map_vm_device(vm, vcpu.pstart, dev_vgic_cpu.pstart, seL4_AllRights);
+    }
+
+    if (vcpu.attr & DEV_ATTR_MULTI_MAP) {
+        addr = map_multi_map_device(vm, vcpu.pstart + 0x10000, dev_vgic_cpu.pstart + 0x1000, seL4_AllRights, &vcpu);
+    } else {
+        addr = map_vm_device(vm, vcpu.pstart + 0x10000, dev_vgic_cpu.pstart + 0x1000, seL4_AllRights);
+    }
+
     assert(addr);
     if (!addr) {
         free(dist.priv);
@@ -782,6 +793,7 @@ vm_install_vgic(vm_t* vm)
 
 const struct device dev_vgic_dist = {
     .devid = DEV_VGIC_DIST,
+    .attr = DEV_ATTR_EMU,
     .name = "vgic.distributor",
     .pstart = GIC_DIST_PADDR,
     .size = 0x1000,
@@ -791,6 +803,7 @@ const struct device dev_vgic_dist = {
 
 const struct device dev_vgic_cpu = {
     .devid = DEV_VGIC_CPU,
+    .attr = DEV_ATTR_NONE,
     .name = "vgic.cpu_interface",
     .pstart = GIC_CPU_PADDR,
     .size = 0x1000,
@@ -800,6 +813,7 @@ const struct device dev_vgic_cpu = {
 
 const struct device dev_vgic_vcpu = {
     .devid = DEV_VGIC_VCPU,
+    .attr = DEV_ATTR_MULTI_MAP,
     .name = "vgic.vcpu_interface",
     .pstart = GIC_VCPU_PADDR,
     .size = 0x1000,

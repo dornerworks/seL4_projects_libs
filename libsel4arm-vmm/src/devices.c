@@ -28,6 +28,75 @@
 #define DMAP(...) do{}while(0)
 #endif
 
+/* the max number of VMs supported */
+#define MAX_NUM_VM  10
+
+typedef struct {
+    vm_t    *vm;
+    cspacepath_t frame_cap;
+} multi_map_dev_entry_t;
+
+typedef struct multi_map_dev_info {
+    enum devid   devid;
+    uintptr_t    paddr;
+    cspacepath_t frame_cap;
+    int          vm_index;
+    multi_map_dev_entry_t   entries[MAX_NUM_VM];
+    struct multi_map_dev_info *next;
+} multi_map_dev_info_t;
+
+static multi_map_dev_info_t *multi_map_dev_head = NULL;
+
+static multi_map_dev_info_t *
+multi_map_dev_find(enum devid devid)
+{
+    if (multi_map_dev_head == NULL) return NULL;
+    multi_map_dev_info_t *head = multi_map_dev_head;
+    while (head != NULL) {
+        if (head->devid == devid) return head;
+        head = head->next;
+    }
+    return NULL;
+}
+
+static multi_map_dev_info_t *
+multi_map_dev_find_by_pa(uintptr_t pa)
+{
+    if (multi_map_dev_head == NULL) return NULL;
+    multi_map_dev_info_t *head = multi_map_dev_head;
+    while (head != NULL) {
+        if (head->paddr == pa) return head;
+        head = head->next;
+    }
+    return NULL;
+}
+
+static multi_map_dev_info_t *
+multi_map_dev_alloc(enum devid devid, uintptr_t pa)
+{
+    multi_map_dev_info_t *info;
+    info = (multi_map_dev_info_t *)malloc(sizeof(multi_map_dev_info_t));
+    if (info == NULL) return NULL;
+    bzero((void *)info, sizeof(multi_map_dev_info_t));
+    info->devid = devid;
+    info->paddr = pa;
+    return info;
+}
+
+static void
+multi_map_dev_free(multi_map_dev_info_t *info)
+{
+    assert(info);
+    free(info);
+}
+
+static void
+multi_map_dev_insert(multi_map_dev_info_t *info)
+{
+    info->next = multi_map_dev_head;
+    multi_map_dev_head = info;
+}
+
 
 static int
 generic_map_page(vka_t* vka, vspace_t* vmm_vspace, vspace_t* vm_vspace,
@@ -188,7 +257,7 @@ map_vm_device(vm_t* vm, uintptr_t pa, uintptr_t va, seL4_CapRights_t rights)
 }
 
 void*
-map_emulated_device(vm_t* vm, const struct device *d)
+map_emulated_device(vm_t* vm, struct device *d)
 {
     cspacepath_t vm_frame, vmm_frame;
     vspace_t *vm_vspace, *vmm_vspace;
@@ -256,6 +325,93 @@ map_emulated_device(vm_t* vm, const struct device *d)
     }
 
     return vmm_addr;
+}
+
+
+void*
+map_multi_map_device(vm_t *vm, uintptr_t pa, uintptr_t va,
+                     seL4_CapRights_t rights, struct device *d)
+{
+    int err;
+    vspace_t *vm_vspace = vm_get_vspace(vm);
+    vka_t *vka = vm->vka;
+    seL4_Word cookie;
+    void *vaddr = (void *)(va & ~0xfff);
+    uintptr_t paddr = pa & ~0xfff;
+    int vm_index = 0;
+    multi_map_dev_info_t *info = NULL;
+    if (d != NULL) {
+        info = multi_map_dev_find(d->devid);
+    } else {
+        info = multi_map_dev_find_by_pa(pa);
+    }
+
+    if (info == NULL) {
+        printf("Need to find the cap first for paddr %x\n", pa);
+        info = multi_map_dev_alloc(((d == NULL)? 0 : d->devid), pa);
+        if (info == NULL) {
+            multi_map_dev_free(info);
+            ZF_LOGE("Failed to alloc multi_map_dev_info_t");
+            return NULL;
+        }
+        err = vka_cspace_alloc_path(vka, &info->frame_cap);
+        if (err) {
+            multi_map_dev_free(info);
+            ZF_LOGE("Failed to alloc cslot for frame cap\n");
+            return NULL;
+        }
+        err = vka_utspace_alloc_at(vka, &info->frame_cap,
+                kobject_get_type(KOBJECT_FRAME, 12), 12, paddr, &cookie);
+        if (err) {
+            err = simple_get_frame_cap(vm->simple, (void *)paddr, 12, &info->frame_cap);
+            if (err) {
+                multi_map_dev_free(info);
+                ZF_LOGE("Failed to find device cap for 0x%x\n", (uint32_t)paddr);
+                return NULL;
+            }
+        }
+
+        info->entries[info->vm_index].vm = vm;
+        multi_map_dev_insert(info);
+        vm_index = info->vm_index;
+        info->vm_index++;
+        assert(info->vm_index < MAX_NUM_VM);
+
+    } else {
+        vm_index = info->vm_index;
+        info->entries[vm_index].vm = vm;
+        info->vm_index++;
+    }
+
+    err = vka_cspace_alloc_path(vka, &info->entries[vm_index].frame_cap);
+    if (err) {
+        ZF_LOGE("Failed to alloc cslot for per-vm frame cap\n");
+        return NULL;
+    }
+    err = vka_cnode_copy(&info->entries[vm_index].frame_cap,
+                         &info->frame_cap, seL4_AllRights);
+    if (err) {
+        ZF_LOGE("Failed to copy per-vm frame cap\n");
+        return NULL;
+    }
+
+    if (vaddr) {
+        reservation_t res;
+        res = vspace_reserve_range_at(vm_vspace, vaddr, 0x1000, rights, 0);
+        assert(res.res);
+
+        err = vspace_map_pages_at_vaddr(vm_vspace,
+                &info->entries[vm_index].frame_cap.capPtr,
+                NULL, vaddr, 1, 12, res);
+        vspace_free_reservation(vm_vspace, res);
+    } else {
+        vaddr = vspace_map_pages(vm_vspace,
+                &info->entries[vm_index].frame_cap.capPtr,
+                NULL, rights, 1, 12, 0);
+        assert(vaddr != 0);
+    }
+    DMAP("Mapped multi-map device ipa0x%x->p0x%x\n", (uint32_t)vaddr, (uint32_t)paddr);
+    return vaddr;
 }
 
 void*
@@ -376,18 +532,11 @@ vm_install_passthrough_device(vm_t* vm, const struct device* device)
     d = *device;
     for (paddr = d.pstart; paddr - d.pstart < d.size; paddr += 0x1000) {
         void* addr;
-        addr = map_vm_device(vm, paddr, paddr, seL4_AllRights);
-#ifdef PLAT_EXYNOS5
-        if (addr == NULL && paddr == MCT_ADDR) {
-            printf("*****************************************\n");
-            printf("*** Linux will try to use the MCT but ***\n");
-            printf("*** the kernel is not exporting it!   ***\n");
-            printf("*****************************************\n");
-            /* VMCT is not fully functional yet */
-//            err = vm_install_vmct(vm);
-            return -1;
+        if (d.attr & DEV_ATTR_MULTI_MAP) {
+            addr = map_multi_map_device(vm, paddr, paddr, seL4_AllRights, &d);
+        } else {
+            addr = map_vm_device(vm, paddr, paddr, seL4_AllRights);
         }
-#endif
         if (!addr) {
             return -1;
         }
