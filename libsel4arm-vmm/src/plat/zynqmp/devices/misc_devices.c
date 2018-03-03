@@ -17,6 +17,7 @@ const struct device dev_gem3 = {
     .name = "gem3",
     .pstart = GEM3_PADDR,
     .size = 0x1000,
+    .sid = 0x877,
     .handle_page_fault = NULL,
     .priv = NULL
 };

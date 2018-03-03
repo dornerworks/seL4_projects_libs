@@ -528,6 +528,7 @@ const struct device dev_uart0 = {
     .name = "uart0",
     .pstart = UART0_PADDR,
     .size = 0x1000,
+    .sid = 0,
     .handle_page_fault = NULL,
     .priv = NULL
 };
@@ -538,6 +539,7 @@ const struct device dev_uart1 = {
     .name = "uart1",
     .pstart = UART1_PADDR,
     .size = 0x1000,
+    .sid = 0,
     .handle_page_fault = &handle_vuart_fault,
     .priv = NULL
 };

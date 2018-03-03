@@ -74,6 +74,9 @@ struct device {
 /// Device mapping size */
     seL4_Word size;
 
+/// stream id  */
+    uint16_t sid;
+
 /// Fault handler */
     int (*handle_page_fault)(struct device* d, vm_t* vm, fault_t* fault);
 /// device emulation private data */
