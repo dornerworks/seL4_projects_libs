@@ -108,16 +108,16 @@ const char* choose_colour(vm_t* vm)
     int id;
     static const char* vm_colours[] = {
         CBBLUE,
-        CBYELLOW,
-        CBMAGENTA,
         CBGREEN,
+        CBMAGENTA,
+        CBYELLOW,
         CBCYAN,
         CBRED
     };
 
     if (vm) {
         id = vm->vmid;
-        id = id % sizeof(vm_colours) / sizeof(*vm_colours);
+        id = id % (sizeof(vm_colours) / sizeof(*vm_colours));
         return vm_colours[id];
     } else {
         return CNORMAL;

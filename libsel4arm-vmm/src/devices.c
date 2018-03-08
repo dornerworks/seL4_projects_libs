@@ -298,7 +298,7 @@ map_emulated_device(vm_t* vm, struct device *d)
 
     /* Map the frame to the VM */
     DMAP("Mapping emulated device ipa0x%x\n", (uint32_t)vm_addr);
-    res = vspace_reserve_range_at(vm_vspace, vm_addr, size, seL4_CanRead, 0);
+    res = vspace_reserve_range_at(vm_vspace, vm_addr, size, seL4_NoRights, 0);
     assert(res.res);
     if (!res.res) {
         vka_cspace_free(vka, vm_frame.capPtr);
