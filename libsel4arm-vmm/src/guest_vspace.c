@@ -9,6 +9,9 @@
  *
  * @TAG(DATA61_BSD)
  */
+
+#include <autoconf.h>
+
 #include "sel4arm-vmm/guest_vspace.h"
 #include <sel4utils/vspace.h>
 #include <sel4utils/vspace_internal.h>
