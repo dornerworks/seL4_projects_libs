@@ -68,9 +68,9 @@ struct device {
 /// A string representation of the device. Useful for debugging
     const char* name;
 /// The physical address of the device */
-    uint32_t pstart;
+    seL4_Word pstart;
 /// Device mapping size */
-    uint32_t size;
+    seL4_Word size;
 
 /// Fault handler */
     int (*handle_page_fault)(struct device* d, vm_t* vm, fault_t* fault);

@@ -347,7 +347,7 @@ map_multi_map_device(vm_t *vm, uintptr_t pa, uintptr_t va,
     }
 
     if (info == NULL) {
-        printf("Need to find the cap first for paddr %x\n", pa);
+        DMAP("Need to find the cap first for paddr %x\n", pa);
         info = multi_map_dev_alloc(((d == NULL)? 0 : d->devid), pa);
         if (info == NULL) {
             multi_map_dev_free(info);

@@ -19,6 +19,8 @@
 #include <stdlib.h>
 #include <sel4/sel4_arch/constants.h>
 
+#include <utils/formats.h>
+
 //#define DEBUG_FAULTS
 //#define DEBUG_ERRATA
 
@@ -44,13 +46,19 @@
 #define COLOR_ERROR "\033[1;31m"
 #define COLOR_NORMAL "\033[0m"
 
+#ifdef CONFIG_ARCH_AARCH64
+#define SRT_MASK    0x1f
+#else
+#define SRT_MASK    0xf
+#endif
+
 #define CPSR_THUMB                 BIT(5)
 #define CPSR_IS_THUMB(x)           ((x) & CPSR_THUMB)
 #define HSR_INST32                 BIT(25)
 #define HSR_IS_INST32(x)           ((x) & HSR_INST32)
 #define HSR_SYNDROME_VALID         BIT(24)
 #define HSR_IS_SYNDROME_VALID(hsr) ((hsr) & HSR_SYNDROME_VALID)
-#define HSR_SYNDROME_RT(x)         (((x) >> 16) & 0xf)
+#define HSR_SYNDROME_RT(x)         (((x) >> 16) & SRT_MASK)
 #define HSR_SYNDROME_WIDTH(x)      (((x) >> 22) & 0x3)
 
 #define CONTENT_REGS               BIT(0)
@@ -83,15 +91,15 @@ struct fault {
     seL4_UserContext regs;
 
 /// The IPA address of the fault
-    uint32_t base_addr;
+    seL4_Word base_addr;
 /// The IPA address of the fault at the current stage
-    uint32_t addr;
+    seL4_Word addr;
 /// The IPA of the instruction which caused the fault
-    uint32_t ip;
+    seL4_Word ip;
 /// The data which was to be written, or the data to return to the VM
-    uint32_t data;
+    seL4_Word data;
 /// Fault status register (IL and ISS fields of HSR cp15 register)
-    uint32_t fsr;
+    seL4_Word fsr;
 /// 'true' if the fault was a prefetch fault rather than a data fault
     bool is_prefetch;
 /// 'true' if we should wait for an interrupt before finishing the fault
@@ -99,7 +107,7 @@ struct fault {
 /// For multiple str/ldr and 32 bit access, the fault is handled in stages
     int stage;
 /// If the instruction requires fetching, cache it here
-    uint32_t instruction;
+    seL4_Word instruction;
 /// The width of the fault
     enum fault_width width;
 /// The mode of the processor
@@ -135,7 +143,11 @@ maybe_fetch_fault_instruction(fault_t* f)
             return -1;
         }
         /* Fixup the instruction */
+#ifdef CONFIG_ARCH_AARCH64
+        if (CPSR_IS_THUMB(fault_get_ctx(f)->spsr)) {
+#else
         if (CPSR_IS_THUMB(fault_get_ctx(f)->cpsr)) {
+#endif
             if (thumb_is_32bit_instruction(inst)) {
                 f->fsr |= HSR_INST32;
             }
@@ -214,7 +226,11 @@ decode_instruction(fault_t* f)
     f->stage = 1;
     f->content |= CONTENT_STAGE;
     /* Decode */
+#ifdef CONFIG_ARCH_AARCH64
+    if (CPSR_IS_THUMB(fault_get_ctx(f)->spsr)) {
+#else
     if (CPSR_IS_THUMB(fault_get_ctx(f)->cpsr)) {
+#endif
         if (thumb_is_32bit_instruction(inst)) {
             f->fsr |= BIT(25); /* 32 bit instruction */
             /* 32 BIT THUMB insts */
@@ -292,7 +308,87 @@ decode_instruction(fault_t* f)
     }
 }
 
-static uint32_t*
+#ifdef CONFIG_ARCH_AARCH64
+
+static seL4_Word wzr = 0;
+static seL4_Word*
+decode_rt(int reg, seL4_UserContext* c)
+{
+    switch (reg) {
+    case  0:
+        return &c->x0;
+    case  1:
+        return &c->x1;
+    case  2:
+        return &c->x2;
+    case  3:
+        return &c->x3;
+    case  4:
+        return &c->x4;
+    case  5:
+        return &c->x5;
+    case  6:
+        return &c->x6;
+    case  7:
+        return &c->x7;
+    case  8:
+        return &c->x8;
+    case  9:
+        return &c->x9;
+    case 10:
+        return &c->x10;
+    case 11:
+        return &c->x11;
+    case 12:
+        return &c->x12;
+    case 13:
+        return &c->x13;
+    case 14:
+        return &c->x14; /* lr */
+    case 15:
+        return &c->x15;
+    case 16:
+        return &c->x16;
+    case 17:
+        return &c->x17;
+    case 18:
+        return &c->x18;
+    case 19:
+        return &c->x19;
+    case 20:
+        return &c->x20;
+    case 21:
+        return &c->x21;
+    case 22:
+        return &c->x22;
+    case 23:
+        return &c->x23;
+    case 24:
+        return &c->x24;
+    case 25:
+        return &c->x25;
+    case 26:
+        return &c->x26;
+    case 27:
+        return &c->x27;
+    case 28:
+        return &c->x28;
+    case 29:
+        return &c->x29;
+    case 30:
+        return &c->x30;
+    case 31:
+        return &wzr;
+    default:
+        printf("invalid reg %d\n", reg);
+        assert(!"Invalid register");
+        return NULL;
+    }
+};
+
+#else
+
+static seL4_Word*
 decode_rt(int reg, seL4_UserContext* c)
 {
     switch (reg) {
@@ -334,13 +430,18 @@ decode_rt(int reg, seL4_UserContext* c)
     }
 };
 
+#endif  /* CONFIG_ARCH_AARCH64 */
+
 static int
 get_rt(fault_t *f)
 {
 
     /* Save processor mode in fault struct */
     if ((f->content & CONTENT_PMODE)  == 0) {
+#ifdef CONFIG_ARCH_AARCH64
+#else
         f->pmode = fault_get_ctx(f)->cpsr & 0x1f;
+#endif
         f->content |= CONTENT_PMODE;
     }
 
@@ -352,6 +453,9 @@ get_rt(fault_t *f)
             rt = HSR_SYNDROME_RT(f->fsr);
         }
     } else {
+#ifdef CONFIG_ARCH_AARCH64
+        printf("decode_instruction for arm64 not implemented\n");
+#endif
         rt = decode_instruction(f);
     }
     assert(rt >= 0);
@@ -364,6 +468,11 @@ get_rt(fault_t *f)
  * processor is in and based on rt returns a banked register.
  */
 int decode_vcpu_reg(int rt, fault_t* f) {
+
+#ifdef CONFIG_ARCH_AARCH64
+    return seL4_VCPUReg_Num;
+#else
+
     assert(f->pmode != PMODE_HYPERVISOR);
     if (f->pmode == PMODE_USER || f->pmode == PMODE_SYSTEM) {
       return seL4_VCPUReg_Num;
@@ -437,6 +546,7 @@ int decode_vcpu_reg(int rt, fault_t* f) {
     }
 
     return reg;
+#endif
 }
 
 
@@ -481,7 +591,8 @@ new_wfi_fault(fault_t *fault)
 int
 new_fault(fault_t* fault)
 {
-    uint32_t is_prefetch, ip, addr, fsr;
+    seL4_Word ip, addr, fsr;
+    uint32_t is_prefetch;
     int err;
     vm_t *vm;
 
@@ -584,7 +695,7 @@ int advance_fault(fault_t* fault)
         int reg = decode_vcpu_reg(rt, fault);
         if (reg == seL4_VCPUReg_Num) {
             /* register is not banked, use seL4_UserContext */
-            uint32_t* reg_ctx = decode_rt(rt, fault_get_ctx(fault));
+            seL4_Word* reg_ctx = decode_rt(rt, fault_get_ctx(fault));
             *reg_ctx = fault_emulate(fault, *reg_ctx);
         } else {
             /* register is banked, use vcpu invocations */
@@ -631,7 +742,46 @@ uint32_t fault_emulate(fault_t* f, uint32_t o)
 
 void print_ctx_regs(seL4_UserContext * regs)
 {
-#define PREG(regs, r)    printf(#r ": 0x%x\n", regs->r)
+#define PREG(regs, r)    printf(#r ": 0x%lx\n", (long unsigned int)regs->r)
+
+#ifdef CONFIG_ARCH_AARCH64
+    PREG(regs, x0);
+    PREG(regs, x1);
+    PREG(regs, x2);
+    PREG(regs, x3);
+    PREG(regs, x4);
+    PREG(regs, x5);
+    PREG(regs, x6);
+    PREG(regs, x7);
+    PREG(regs, x8);
+    PREG(regs, x9);
+    PREG(regs, x10);
+    PREG(regs, x11);
+    PREG(regs, x12);
+    PREG(regs, pc);
+    PREG(regs, x14);
+    PREG(regs, sp);
+    PREG(regs, spsr);
+
+    PREG(regs, x13);
+    PREG(regs, x15);
+    PREG(regs, x16);
+    PREG(regs, x17);
+    PREG(regs, x18);
+    PREG(regs, x19);
+    PREG(regs, x20);
+    PREG(regs, x21);
+
+    PREG(regs, x22);
+    PREG(regs, x23);
+    PREG(regs, x24);
+    PREG(regs, x25);
+    PREG(regs, x26);
+    PREG(regs, x27);
+    PREG(regs, x28);
+    PREG(regs, x29);
+    PREG(regs, x30);
+#else
     PREG(regs, r0);
     PREG(regs, r1);
     PREG(regs, r2);
@@ -649,6 +799,8 @@ void print_ctx_regs(seL4_UserContext * regs)
     PREG(regs, r14);
     PREG(regs, sp);
     PREG(regs, cpsr);
+#endif
+
 #undef PREG
 }
 
@@ -777,7 +929,11 @@ int fault_is_wfi(fault_t *f) {
 int fault_is_32bit_instruction(fault_t* f)
 {
     if (fault_is_wfi(f)) {
+#ifdef CONFIG_ARCH_AARCH64
+        return !CPSR_IS_THUMB(fault_get_ctx(f)->spsr);
+#else
         return !CPSR_IS_THUMB(fault_get_ctx(f)->cpsr);
+#endif
     }
     if (!HSR_IS_SYNDROME_VALID(f->fsr)) {
         /* (maybe) Trigger a decode to update the fsr. */

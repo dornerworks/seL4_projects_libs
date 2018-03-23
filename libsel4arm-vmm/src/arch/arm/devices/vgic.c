@@ -91,13 +91,6 @@ enum gic_dist_action {
     ACTION_UNKNOWN
 };
 
-struct virq_handle {
-    int virq;
-    void (*ack)(void* token);
-    void* token;
-    vm_t* vm;
-};
-
 static inline vm_t* virq_get_vm(struct virq_handle* irq)
 {
     return irq->vm;
@@ -515,7 +508,8 @@ handle_vgic_dist_fault(struct device* d, vm_t* vm, fault_t* fault)
     mask = fault_get_data_mask(fault);
     offset = fault_get_address(fault) - d->pstart;
 
-    reg = (uint32_t*)( (uintptr_t)gic_dist + offset );
+    reg = (uint32_t*)( (uintptr_t)gic_dist + (offset - (offset % 4)));
+
     act = gic_dist_get_action(offset);
 
     assert(offset >= 0 && offset < d->size);

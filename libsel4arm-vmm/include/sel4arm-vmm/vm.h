@@ -29,6 +29,7 @@
 #endif //CONFIG_LIB_SEL4_ARM_VMM_VCHAN_SUPPORT
 
 #define MAX_DEVICES_PER_VM 50
+#define MAX_PASSTHROUGH_IRQS 256
 #define MAX_REBOOT_HOOKS_PER_VM 10
 
 typedef int (*reboot_hook_fn)(vm_t* vm, void *token);
@@ -41,6 +42,7 @@ struct reboot_hooks {
 struct vm {
     /* Identification */
     const char* name;
+    const char* dtb_name;
     int vmid;
     /* OS support */
     vka_t *vka;
@@ -56,7 +58,14 @@ struct vm {
     vka_object_t vcpu;
     /* Installed devices */
     struct device devices[MAX_DEVICES_PER_VM];
+    /* The IRQs routed to the VM */
+    int passthrough_irqs[MAX_PASSTHROUGH_IRQS];
+    /* the number of passthrough IRQs */
+    int npassthrough_irqs;
     int ndevices;
+    /* enable installing devices automatically if
+     * the faulting address is in a device MMIO region */
+    int ondemand_dev_install;
     /* Installed reboot hooks */
     struct reboot_hooks rb_hooks[MAX_REBOOT_HOOKS_PER_VM];
     int nhooks;
@@ -78,6 +87,14 @@ struct vm {
 #endif //CONFIG_LIB_SEL4_ARM_VMM_VCHAN_SUPPORT
 };
 typedef struct vm vm_t;
+
+struct virq_handle {
+    int virq;
+    void (*ack)(void* token);
+    void* token;
+    vm_t* vm;
+    struct virq_handle* next;
+};
 
 typedef struct virq_handle* virq_handle_t;
 
@@ -141,7 +158,7 @@ void* vm_copyout_elf(vm_t* vm, void* elf_data);
  * @param[in] addr      The address that the atags should be copied to
  * @return              0 on success
  */
-int vm_copyout_atags(vm_t* vm, struct atag_list* atags, uint32_t addr);
+int vm_copyout_atags(vm_t* vm, struct atag_list* atags, seL4_Word addr);
 
 /**
  * Set the boot args and pc for the VM.
@@ -156,7 +173,7 @@ int vm_copyout_atags(vm_t* vm, struct atag_list* atags, uint32_t addr);
  * @param[in] atags     Linux specific IPA of atags
  * @return              0 on success
  */
-int vm_set_bootargs(vm_t* vm, void* pc, uint32_t mach_type, uint32_t atags);
+int vm_set_bootargs(vm_t* vm, void* pc, uint32_t mach_type, seL4_Word atags);
 
 
 /**

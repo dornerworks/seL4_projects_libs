@@ -146,7 +146,7 @@ vm_copyout(vm_t* vm, void* data, uintptr_t address, size_t size)
 void*
 vm_copyout_elf(vm_t* vm, void* elf_file)
 {
-    uint32_t entry;
+    seL4_Word entry;
     int num_headers;
     int i;
 

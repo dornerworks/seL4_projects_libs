@@ -28,6 +28,12 @@
 #include "devices.h"
 #include "sel4arm-vmm/guest_vspace.h"
 
+#ifdef CONFIG_ARCH_AARCH32
+#define VM_SIZE 32
+#else
+#define VM_SIZE 64
+#endif
+
 //#define DEBUG_VM
 //#define DEBUG_RAM_FAULTS
 //#define DEBUG_DEV_FAULTS
@@ -37,6 +43,7 @@
 #define VM_FAULT_EP_SLOT       1
 #define VM_CSPACE_SLOT         2
 
+#ifndef CONFIG_ARCH_AARCH64
 #define MODE_USER       0x10
 #define MODE_FIQ        0x11
 #define MODE_IRQ        0x12
@@ -46,6 +53,10 @@
 #define MODE_HYP        0x1a
 #define MODE_UNDEFINED  0x1b
 #define MODE_SYSTEM     0x1f
+#else
+#define MODE_EL1h       0x05
+#endif
+
 
 #define CERROR    "\033[1;31m"
 #define CNORMAL   "\033[0m"
@@ -143,14 +154,14 @@ handle_page_fault(vm_t* vm, fault_t* fault)
         default:
             mapped = map_vm_device(vm, addr, addr, seL4_AllRights);
             if (mapped) {
-                DVM("WARNING: Blindly mapped device @ 0x%x for PC 0x%x\n",
+                DVM("WARNING: Blindly mapped device @ 0x%lx for PC 0x%lx\n",
                     fault_get_address(fault), fault_get_ctx(fault)->pc);
                 restart_fault(fault);
                 return 0;
             }
             mapped = map_vm_ram(vm, addr);
             if (mapped) {
-                DVM("WARNING: Mapped RAM for device @ 0x%x for PC 0%x\n",
+                DVM("WARNING: Mapped RAM for device @ 0x%lx for PC 0%lx\n",
                     fault_get_address(fault), fault_get_ctx(fault)->pc);
                 restart_fault(fault);
                 return 0;
@@ -184,13 +195,13 @@ vm_create(const char* name, int priority,
           ps_io_ops_t* io_ops,
           vm_t* vm)
 {
-
-    seL4_Word null_cap_data = seL4_NilData;
     seL4_Word cspace_root_data;
     cspacepath_t src, dst;
 
     int err;
-
+    static int vmid = 0;
+    bzero(vm, sizeof(vm_t));
+    vm->vmid = vmid++;
     vm->name = name;
     vm->ndevices = 0;
     vm->nhooks = 0;
@@ -208,7 +219,7 @@ vm_create(const char* name, int priority,
     err = vka_alloc_cnode_object(vka, VM_CSPACE_SIZE_BITS, &vm->cspace);
     assert(!err);
     vka_cspace_make_path(vka, vm->cspace.cptr, &src);
-    cspace_root_data = seL4_CNode_CapData_new(0, 32 - VM_CSPACE_SIZE_BITS).words[0];
+    cspace_root_data = seL4_CNode_CapData_new(0, VM_SIZE - VM_CSPACE_SIZE_BITS).words[0];
     dst.root = vm->cspace.cptr;
     dst.capPtr = VM_CSPACE_SLOT;
     dst.capDepth = VM_CSPACE_SIZE_BITS;
@@ -216,7 +227,7 @@ vm_create(const char* name, int priority,
     assert(!err);
 
     /* Create a vspace */
-    err = vka_alloc_page_directory(vka, &vm->pd);
+    err = vka_alloc_vspace_root(vka, &vm->pd);
     assert(!err);
     err = simple_ASIDPool_assign(simple, vm->pd.cptr);
     assert(err == seL4_NoError);
@@ -227,7 +238,7 @@ vm_create(const char* name, int priority,
     vka_cspace_make_path(vka, vmm_endpoint, &src);
     err = vka_cspace_alloc_path(vka, &dst);
     assert(!err);
-    err = vka_cnode_mint(&dst, &src, seL4_AllRights, seL4_CapData_Badge_new(vm_badge));
+    err = vka_cnode_mint(&dst, &src, seL4_AllRights, vm_badge);
     assert(!err);
     /* Copy it to the cspace of the VM for fault IPC */
     src = dst;
@@ -242,7 +253,7 @@ vm_create(const char* name, int priority,
     assert(!err);
     err = seL4_TCB_Configure(vm_get_tcb(vm), VM_FAULT_EP_SLOT,
                              vm->cspace.cptr, cspace_root_data,
-                             vm->pd.cptr, null_cap_data, 0, seL4_CapNull);
+                             vm->pd.cptr, 0, 0, seL4_CapNull);
     assert(!err);
 
     err = seL4_TCB_SetSchedParams(vm_get_tcb(vm), simple_get_tcb(simple), priority - 1, priority - 1);
@@ -263,7 +274,7 @@ vm_create(const char* name, int priority,
 
 
 int
-vm_set_bootargs(vm_t* vm, void* pc, uint32_t mach_type, uint32_t atags)
+vm_set_bootargs(vm_t* vm, void* pc, uint32_t mach_type, seL4_Word atags)
 {
     seL4_UserContext regs;
     seL4_CPtr tcb;
@@ -273,11 +284,17 @@ vm_set_bootargs(vm_t* vm, void* pc, uint32_t mach_type, uint32_t atags)
     tcb = vm_get_tcb(vm);
     err = seL4_TCB_ReadRegisters(tcb, false, 0, sizeof(regs) / sizeof(regs.pc), &regs);
     assert(!err);
+#ifdef CONFIG_ARCH_AARCH64
+    regs.x0 = atags;
+    regs.pc = (seL4_Word)pc;
+    regs.spsr = MODE_EL1h;
+#else
     regs.r0 = 0;
     regs.r1 = mach_type;
     regs.r2 = atags;
     regs.pc = (seL4_Word)pc;
     regs.cpsr = MODE_SUPERVISOR;
+#endif
     err = seL4_TCB_WriteRegisters(tcb, false, 0, sizeof(regs) / sizeof(regs.pc), &regs);
     assert(!err);
     return err;
@@ -299,10 +316,17 @@ vm_stop(vm_t* vm)
 static void
 sys_pa_to_ipa(vm_t* vm, seL4_UserContext* regs)
 {
-    uint32_t pa;
+    uint32_t UNUSED pa;
+#ifdef CONFIG_ARCH_AARCH64
+#else
     pa = regs->r0;
+#endif
+
     DSTRACE("PA translation syscall from [%s]: 0x%08x->?\n", vm->name, pa);
+#ifdef CONFIG_ARCH_AARCH64
+#else
     regs->r0 = pa;
+#endif
 }
 
 
@@ -310,9 +334,12 @@ static void
 sys_ipa_to_pa(vm_t* vm, seL4_UserContext* regs)
 {
     seL4_ARM_Page_GetAddress_t ret;
-    uint32_t ipa;
+    seL4_Word ipa;
     seL4_CPtr cap;
+#ifdef CONFIG_ARCH_AARCH64
+#else
     ipa = regs->r0;
+#endif
     cap = vspace_get_cap(vm_get_vspace(vm), (void*)ipa);
     if (cap == seL4_CapNull) {
         void* mapped_address;
@@ -329,7 +356,10 @@ sys_ipa_to_pa(vm_t* vm, seL4_UserContext* regs)
     assert(!ret.error);
     DSTRACE("IPA translation syscall from [%s]: 0x%08x->0x%08x\n",
             vm->name, ipa, ret.paddr);
+#ifdef CONFIG_ARCH_AARCH64
+#else
     regs->r0 = ret.paddr;
+#endif
 }
 
 static void
@@ -432,7 +462,11 @@ vm_event(vm_t* vm, seL4_MessageInfo_t tag)
         int idx;
         int err;
         assert(length == seL4_VGICMaintenance_Length);
+#ifdef CONFIG_ARCH_AARCH64
+        idx = seL4_GetMR(seL4_UnknownSyscall_X0);
+#else
         idx = seL4_GetMR(seL4_UnknownSyscall_R0);
+#endif
         /* Currently not handling spurious IRQs */
         assert(idx >= 0);
 
@@ -447,13 +481,15 @@ vm_event(vm_t* vm, seL4_MessageInfo_t tag)
     }
     break;
     case seL4_Fault_VCPUFault: {
-        seL4_MessageInfo_t reply;
         uint32_t hsr;
-        int err;
         fault_t* fault;
         fault = vm->fault;
         assert(length == seL4_VCPUFault_Length);
+#ifdef CONFIG_ARCH_AARCH64
+        hsr = seL4_GetMR(seL4_UnknownSyscall_X0);
+#else
         hsr = seL4_GetMR(seL4_UnknownSyscall_R0);
+#endif
         /* check if the exception class (bits 26-31) of the HSR indicate WFI/WFE */
         if ( (hsr >> 26) == 1) {
             /* generate a new WFI fault */
@@ -475,7 +511,7 @@ vm_event(vm_t* vm, seL4_MessageInfo_t tag)
 }
 
 int
-vm_copyout_atags(vm_t* vm, struct atag_list* atags, uint32_t addr)
+vm_copyout_atags(vm_t* vm, struct atag_list* atags, seL4_Word addr)
 {
     vspace_t *vm_vspace, *vmm_vspace;
     void* vm_addr, *vmm_addr, *buf;
@@ -599,14 +635,13 @@ int
 vm_install_service(vm_t* vm, seL4_CPtr service, int index, uint32_t b)
 {
     cspacepath_t src, dst;
-    seL4_CapData_t badge;
     int err;
-    badge = seL4_CapData_Badge_new(b);
+
     vka_cspace_make_path(vm->vka, service, &src);
     dst.root = vm->cspace.cptr;
     dst.capPtr = index;
     dst.capDepth = VM_CSPACE_SIZE_BITS;
-    err =  vka_cnode_mint(&dst, &src, seL4_AllRights, badge);
+    err =  vka_cnode_mint(&dst, &src, seL4_AllRights, (seL4_Word)b);
     return err;
 }
 
