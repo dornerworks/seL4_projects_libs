@@ -67,10 +67,17 @@
 #define DDIST(...) do{}while(0)
 #endif
 
+#ifdef CONFIG_PLAT_ZYNQMP
+#define GIC_DIST_PADDR       (GIC_PADDR + 0x10000)
+#define GIC_CPU_PADDR        (GIC_PADDR + 0x20000)
+#define GIC_VCPU_CNTR_PADDR  (GIC_PADDR + 0x40000)
+#define GIC_VCPU_PADDR       (GIC_PADDR + 0x60000)
+#else
 #define GIC_DIST_PADDR       (GIC_PADDR + 0x1000)
 #define GIC_CPU_PADDR        (GIC_PADDR + 0x2000)
 #define GIC_VCPU_CNTR_PADDR  (GIC_PADDR + 0x4000)
 #define GIC_VCPU_PADDR       (GIC_PADDR + 0x6000)
+#endif
 
 #define IRQ_IDX(irq) ((irq) / 32)
 #define IRQ_BIT(irq) (1U << ((irq) % 32))
@@ -679,6 +686,7 @@ vm_virq_new(vm_t* vm, int virq, void (*ack)(void*), void* token)
     virq_data->token = token;
     virq_data->ack = ack;
     virq_data->vm = vm;
+    virq_data->next = NULL;
     err = virq_add(vgic, virq_data);
     if (err) {
         free(virq_data);
