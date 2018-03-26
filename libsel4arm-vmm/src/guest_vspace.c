@@ -47,38 +47,43 @@ guest_vspace_map(vspace_t *vspace, seL4_CPtr cap, void *vaddr, seL4_CapRights_t 
         return error;
     }
 #ifdef CONFIG_ARM_SMMU
-    struct sel4utils_alloc_data *data = get_alloc_data(vspace);
-    /* this type cast works because the alloc data was at the start of the struct
-     * so it has the same address.
-     * This conversion is guaranteed to work by the C standard */
-    guest_vspace_t *guest_vspace = (guest_vspace_t*) data;
-    /* set the mapping bit */
-    guest_vspace->done_mapping = 1;
-    cspacepath_t orig_path;
-    vka_cspace_make_path(guest_vspace->vspace_data.vka, cap, &orig_path);
-    /* map into all the io spaces */
-    for (int i = 0; i < guest_vspace->num_iospaces; i++) {
-        cspacepath_t new_path;
-        error = vka_cspace_alloc_path(guest_vspace->vspace_data.vka, &new_path);
-        if (error) {
-            ZF_LOGE("Failed to allocate cslot to duplicate frame cap");
-            return error;
-        }
-        error = vka_cnode_copy(&new_path, &orig_path, seL4_AllRights);
+    /* If an object doesn't have Read or Write access, there isn't a reason to put
+     * it in DMA space
+     */
+    if (rights.words[0] != seL4_NoRights.words[0]) {
+        struct sel4utils_alloc_data *data = get_alloc_data(vspace);
+        /* this type cast works because the alloc data was at the start of the struct
+         * so it has the same address.
+         * This conversion is guaranteed to work by the C standard */
+        guest_vspace_t *guest_vspace = (guest_vspace_t*) data;
+        /* set the mapping bit */
+        guest_vspace->done_mapping = 1;
+        cspacepath_t orig_path;
+        vka_cspace_make_path(guest_vspace->vspace_data.vka, cap, &orig_path);
+        /* map into all the io spaces */
+        for (int i = 0; i < guest_vspace->num_iospaces; i++) {
+            cspacepath_t new_path;
+            error = vka_cspace_alloc_path(guest_vspace->vspace_data.vka, &new_path);
+            if (error) {
+                ZF_LOGE("Failed to allocate cslot to duplicate frame cap");
+                return error;
+            }
+            error = vka_cnode_copy(&new_path, &orig_path, seL4_AllRights);
 
-        guest_iospace_t *guest_iospace = &guest_vspace->iospaces[i];
+            guest_iospace_t *guest_iospace = &guest_vspace->iospaces[i];
 
-        assert(error == seL4_NoError);
-        error = sel4utils_map_iospace_page(guest_vspace->vspace_data.vka, guest_iospace->iospace,
-                                           new_path.capPtr, (uintptr_t)vaddr, rights, 1,
-                                           size_bits, NULL, NULL);
-        if (error) {
-            ZF_LOGE("Failed to map page into iospace %d", i);
-            return error;
-        }
-        if (error) {
-            ZF_LOGE("Failed to add iospace mapping information");
-            return error;
+            assert(error == seL4_NoError);
+            error = sel4utils_map_iospace_page(guest_vspace->vspace_data.vka, guest_iospace->iospace,
+                                               new_path.capPtr, (uintptr_t)vaddr, rights, 1,
+                                               size_bits, NULL, NULL);
+            if (error) {
+                ZF_LOGE("Failed to map page into iospace %d", i);
+                return error;
+            }
+            if (error) {
+                ZF_LOGE("Failed to add iospace mapping information");
+                return error;
+            }
         }
     }
 #endif
