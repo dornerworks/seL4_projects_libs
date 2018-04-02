@@ -31,6 +31,7 @@
 #define MAX_DEVICES_PER_VM 50
 #define MAX_PASSTHROUGH_IRQS 256
 #define MAX_REBOOT_HOOKS_PER_VM 10
+#define MAX_COMM_CHANNELS 10
 
 #define RESTART_VM -2
 #define SHUTDOWN_VM -3
@@ -82,6 +83,9 @@ struct vm {
     char *linux_name;
     /* Fault structure */
     fault_t *fault;
+
+    struct vchan_device vchans[MAX_COMM_CHANNELS];
+    int nvchans;
 
 #ifdef CONFIG_LIB_SEL4_ARM_VMM_VCHAN_SUPPORT
     /* Installed vchan connections */
@@ -265,7 +269,7 @@ int vm_register_reboot_callback(vm_t *vm, reboot_hook_fn hook, void *token);
  * @param  vm The VM
  * @return    0 if all callbacks successfully called. If a callback fails with
  *            an error then this returns with that error and callbacks registered
- *            after failing callback will not be called. 
+ *            after failing callback will not be called.
  */
 int vm_process_reboot_callbacks(vm_t *vm);
 

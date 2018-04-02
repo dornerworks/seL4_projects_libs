@@ -30,6 +30,8 @@
 #include "devices.h"
 #include "sel4arm-vmm/guest_vspace.h"
 
+#include <sel4arm-vmm/vchan.h>
+
 #ifdef CONFIG_ARCH_AARCH32
 #define VM_SIZE 32
 #else
@@ -61,6 +63,9 @@
 
 #define PSCI_SYS_OFF    0x84000008
 #define PSCI_SYS_RST    0x84000009
+
+#define VM_WRITE_TOKEN 0xfabbdad
+#define VM_READ_TOKEN  0xfabbdab
 
 #define CERROR    "\033[1;31m"
 #define CNORMAL   "\033[0m"
@@ -423,6 +428,9 @@ handle_syscall(vm_t* vm, seL4_Word length)
     seL4_CPtr tcb;
     int err;
 
+    struct vchan_device *dev;
+    seL4_MessageInfo_t tag;
+
     syscall = seL4_GetMR(seL4_UnknownSyscall_Syscall),
     ip = seL4_GetMR(seL4_UnknownSyscall_FaultIP);
 
@@ -442,6 +450,38 @@ handle_syscall(vm_t* vm, seL4_Word length)
     case 67:
         sys_nop(vm, &regs);
         break;
+    case VM_READ_TOKEN:
+    case VM_WRITE_TOKEN:
+        tag = seL4_MessageInfo_new(0, 0, 0, VCHAN_NUM_MSG);
+
+        dev = vm_find_vchan_by_port(vm, regs.x0);
+        seL4_SetMR(VCHAN_EVENT, (syscall == VM_WRITE_TOKEN) ? VCHAN_WRITE : VCHAN_READ);
+
+        /* If there isn't a vchan device, just return */
+        if(dev == NULL) {
+            printf("WARNING: Vchan %d does not exist. Returning\n", regs.x0);
+            /* We need to set the return length to 0 if the VM is reading from
+             * the communication server's write buffer
+             */
+            if (syscall == VM_WRITE_TOKEN) {
+                regs.x2 = 0;
+            }
+            break;
+        }
+
+        /* Signal the proper comm server with expected messages */
+        seL4_SetMR(VCHAN_PORT, regs.x0);
+        seL4_SetMR(VCHAN_CHECKSUM, regs.x1);
+        seL4_SetMR(VCHAN_LEN, regs.x2);
+
+        tag = seL4_Call(dev->comm_ep, tag);
+
+        /* The VM expects the message length and checksum to be returned */
+        regs.x1 = seL4_GetMR(VCHAN_CHECKSUM_RET);
+        regs.x2 = seL4_GetMR(VCHAN_LEN_RET);
+
+        break;
+
     default:
         printf("%sBad syscall from [%s]: scno "DFMT" at PC: 0x"XFMT"%s\n",
                CERROR, vm->name, syscall, ip, CNORMAL);
@@ -675,6 +715,18 @@ vm_add_device(vm_t* vm, const struct device* d)
     }
 }
 
+int
+vm_add_vchan(vm_t* vm, const struct vchan_device* d)
+{
+    assert(d != NULL);
+    if (vm->nvchans < MAX_DEVICES_PER_VM) {
+        vm->vchans[vm->nvchans++] = *d;
+        return 0;
+    } else {
+        return -1;
+    }
+}
+
 static int cmp_id(struct device* d, void* data)
 {
     return !(d->devid == *((enum devid*)data));
@@ -705,6 +757,18 @@ vm_find_device_by_id(vm_t* vm, enum devid id) {
 struct device*
 vm_find_device_by_ipa(vm_t* vm, uintptr_t ipa) {
     return vm_find_device(vm, &cmp_ipa, &ipa);
+}
+
+struct vchan_device*
+vm_find_vchan_by_port(vm_t* vm, int port) {
+    struct vchan_device *ret;
+    int i;
+    for (i = 0, ret = vm->vchans; i < vm->nvchans; i++, ret++) {
+        if (ret->port == port) {
+            return ret;
+        }
+    }
+    return NULL;
 }
 
 vspace_t* vm_get_vspace(vm_t* vm)

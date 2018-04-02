@@ -59,6 +59,10 @@ typedef enum {
     DEV_ATTR_MULTI_MAP,
 } dev_attr_t;
 
+struct vm_register {
+    int vmid;
+};
+
 /**
  * Device description
  */
@@ -81,6 +85,25 @@ struct device {
     int (*handle_page_fault)(struct device* d, vm_t* vm, fault_t* fault);
 /// device emulation private data */
     void* priv;
+};
+
+/**
+ * VChan device description
+ */
+struct vchan_device {
+/// A string representation of the device. Useful for debugging
+    const char* name;
+/// The physical address of the read buffer */
+    seL4_Word pread;
+/// The physical address of the write buffer */
+    seL4_Word pwrite;
+/// Source and Destination identification */
+    struct vm_register source;
+    struct vm_register destination;
+/// Communication server endpoint */
+    seL4_CPtr comm_ep;
+/// vchan port */
+    int port;
 };
 
 /**
@@ -143,6 +166,16 @@ int vm_install_emulated_device(vm_t* vm, const struct device *device);
  * @return           0 on success
  */
 int vm_add_device(vm_t* vm, const struct device* d);
+
+/**
+ * Add a vchan device to the VM without performind any initialisation of the device
+ * When the VM receives a VM Syscall it will check to see if the assigned port
+ * matches a registered vchan.
+ * @param[in] vm     A handle to the VM that the device should be install to
+ * @param[in] device A description of the device
+ * @return           0 on success
+ */
+int vm_add_vchan(vm_t* vm, const struct vchan_device* d);
 
 /**
  * Map a given frame cap into a VM's IPA.
