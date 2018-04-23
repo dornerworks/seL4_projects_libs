@@ -23,7 +23,7 @@
 #include <sel4/sel4.h>
 #include <sel4/messages.h>
 
-#include "arch/arm/devices/vgic.h"
+#include "arch/arm/devices/vgic/vgic.h"
 
 #include "devices.h"
 #include "sel4arm-vmm/guest_vspace.h"

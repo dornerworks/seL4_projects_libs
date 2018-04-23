@@ -9,6 +9,7 @@
 #
 # @TAG(DATA61_BSD)
 #
+
 # Targets
 TARGETS := libsel4arm-vmm.a
 
@@ -18,6 +19,8 @@ CFILES += $(patsubst $(SOURCE_DIR)/%,%,$(wildcard ${SOURCE_DIR}/src/arch/$(ARCH)
 CFILES += $(patsubst $(SOURCE_DIR)/%,%,$(wildcard ${SOURCE_DIR}/src/*.c))
 CFILES += $(patsubst $(SOURCE_DIR)/%,%,$(wildcard ${SOURCE_DIR}/src/images/*.c))
 CFILES += $(patsubst $(SOURCE_DIR)/%,%,$(wildcard ${SOURCE_DIR}/src/devices/*.c))
+
+CFILES += $(patsubst $(SOURCE_DIR)/%,%,$(wildcard ${SOURCE_DIR}/src/arch/$(ARCH)/*/vgic/vgic${GIC}.c))
 
 # Header files/directories this library provides
 HDRFILES := $(wildcard ${SOURCE_DIR}/include/*) \

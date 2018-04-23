@@ -9,11 +9,11 @@
  *
  * @TAG(DATA61_BSD)
  */
-#include "../../../vm.h"
+
+#include "../../../../vm.h"
 
 extern const struct device dev_vgic_dist;
 extern const struct device dev_vgic_vcpu;
 extern const struct device dev_vgic_cpu;
-
 
 int handle_vgic_maintenance(vm_t* vm, int idx);

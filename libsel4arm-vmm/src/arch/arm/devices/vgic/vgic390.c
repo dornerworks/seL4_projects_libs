@@ -49,8 +49,7 @@
 #include <vka/vka.h>
 #include <vka/capops.h>
 
-#include "../../../devices.h"
-#include "../../../vm.h"
+#include "../../../../devices.h"
 
 //#define DEBUG_IRQ
 //#define DEBUG_DIST
