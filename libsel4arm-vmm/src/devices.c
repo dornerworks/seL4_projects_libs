@@ -261,7 +261,7 @@ map_emulated_device(vm_t* vm, struct device *d)
 {
     cspacepath_t vm_frame, vmm_frame;
     vspace_t *vm_vspace, *vmm_vspace;
-    void* vm_addr, *vmm_addr;
+    void* vm_addr, *vmm_addr, *prev_vmm;
     reservation_t res;
     vka_object_t frame;
     vka_t* vka;
@@ -273,58 +273,74 @@ map_emulated_device(vm_t* vm, struct device *d)
     size = d->size;
     vm_vspace = vm_get_vspace(vm);
     vmm_vspace = vm->vmm_vspace;
-    assert(size == 0x1000);
 
-    /* Create a frame (and a copy for the VMM) */
-    err = vka_alloc_frame(vka, 12, &frame);
-    assert(!err);
-    if (err) {
-        return NULL;
-    }
-    vka_cspace_make_path(vka, frame.cptr, &vm_frame);
-    err = vka_cspace_alloc_path(vka, &vmm_frame);
-    assert(!err);
-    if (err) {
-        vka_free_object(vka, &frame);
-        return NULL;
-    }
-    err = vka_cnode_copy(&vmm_frame, &vm_frame, seL4_AllRights);
-    assert(!err);
-    if (err) {
-        vka_cspace_free(vka, vm_frame.capPtr);
-        vka_free_object(vka, &frame);
-        return NULL;
-    }
+    /* Ensure that the inputted size is at least one page and page aligned  */
+    assert(size >= 0x1000);
+    assert((size & (BIT(seL4_PageBits)-1)) == 0);
 
-    /* Map the frame to the VM */
-    DMAP("Mapping emulated device ipa0x%x\n", (uint32_t)vm_addr);
-    res = vspace_reserve_range_at(vm_vspace, vm_addr, size, seL4_NoRights, 0);
-    assert(res.res);
-    if (!res.res) {
-        vka_cspace_free(vka, vm_frame.capPtr);
-        vka_cspace_free(vka, vmm_frame.capPtr);
-        vka_free_object(vka, &frame);
-        return NULL;
+    unsigned int num_pages = size / BIT(seL4_PageBits);
+
+    for (int i = 0; i < num_pages; i++) {
+
+        /* Create a frame (and a copy for the VMM) */
+        err = vka_alloc_frame(vka, 12, &frame);
+        assert(!err);
+        if (err) {
+            return NULL;
+        }
+        vka_cspace_make_path(vka, frame.cptr, &vm_frame);
+        err = vka_cspace_alloc_path(vka, &vmm_frame);
+        assert(!err);
+        if (err) {
+            vka_free_object(vka, &frame);
+            return NULL;
+        }
+        err = vka_cnode_copy(&vmm_frame, &vm_frame, seL4_AllRights);
+        assert(!err);
+        if (err) {
+            vka_cspace_free(vka, vm_frame.capPtr);
+            vka_free_object(vka, &frame);
+            return NULL;
+        }
+
+        /* Map the frame to the VM */
+        DMAP("Mapping emulated device ipa0x%x\n", (uint32_t)vm_addr);
+        res = vspace_reserve_range_at(vm_vspace, vm_addr, BIT(seL4_PageBits), seL4_NoRights, 0);
+        assert(res.res);
+        if (!res.res) {
+            vka_cspace_free(vka, vm_frame.capPtr);
+            vka_cspace_free(vka, vmm_frame.capPtr);
+            vka_free_object(vka, &frame);
+            return NULL;
+        }
+        err = vspace_map_pages_at_vaddr(vm_vspace, &vm_frame.capPtr, NULL, vm_addr,
+                                        1, seL4_PageBits, res);
+        vspace_free_reservation(vm_vspace, res);
+        assert(!err);
+        if (err) {
+            printf("Failed to provide memory\n");
+            vka_cspace_free(vka, vm_frame.capPtr);
+            vka_cspace_free(vka, vmm_frame.capPtr);
+            vka_free_object(vka, &frame);
+            return NULL;
+        }
+        prev_vmm = vmm_addr;
+        vmm_addr = vspace_map_pages(vmm_vspace, &vmm_frame.capPtr, NULL, seL4_AllRights,
+                                    1, seL4_PageBits, 0);
+        assert(vmm_addr);
+        if (vmm_addr == NULL) {
+            return NULL;
+        }
+
+        if (i > 0) {
+            assert(vmm_addr == (prev_vmm + BIT(seL4_PageBits)));
+        }
+        vm_addr += BIT(seL4_PageBits);
     }
-    err = vspace_map_pages_at_vaddr(vm_vspace, &vm_frame.capPtr, NULL, vm_addr,
-                                    1, 12, res);
-    vspace_free_reservation(vm_vspace, res);
-    assert(!err);
-    if (err) {
-        printf("Failed to provide memory\n");
-        vka_cspace_free(vka, vm_frame.capPtr);
-        vka_cspace_free(vka, vmm_frame.capPtr);
-        vka_free_object(vka, &frame);
-        return NULL;
-    }
-    vmm_addr = vspace_map_pages(vmm_vspace, &vmm_frame.capPtr, NULL, seL4_AllRights,
-                                1, 12, 0);
     assert(vmm_addr);
-    if (vmm_addr == NULL) {
-        return NULL;
-    }
 
-    return vmm_addr;
+    /* We make the assumption that the pages are parallel in memory */
+    return vmm_addr - (BIT(seL4_PageBits) * --num_pages);
 }
 
 
