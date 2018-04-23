@@ -142,8 +142,7 @@ handle_page_fault(vm_t* vm, fault_t* fault)
                       fault_get_address(fault), fault_get_ctx(fault)->pc);
         }
         return d->handle_page_fault(d, vm, fault);
-    } else {
-#ifdef CONFIG_ONDEMAND_DEVICE_INSTALL
+    } else if (vm->ondemand_dev_install) {
         uintptr_t addr = fault_get_address(fault) & ~0xfff;
         void* mapped;
         switch (addr) {
@@ -168,7 +167,7 @@ handle_page_fault(vm_t* vm, fault_t* fault)
             }
             DVM("Unhandled fault on address 0x%x\n", (uint32_t)addr);
         }
-#endif
+    } else {
         print_fault(fault);
         abandon_fault(fault);
         return -1;
