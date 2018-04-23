@@ -3,12 +3,15 @@
  * Commonwealth Scientific and Industrial Research Organisation (CSIRO)
  * ABN 41 687 119 230.
  *
+ * Copyright 2018, DornerWorks
+ *
  * This software may be distributed and modified according to the terms of
  * the BSD 2-Clause license. Note that NO WARRANTY is provided.
  * See "LICENSE_BSD2.txt" for details.
  *
- * @TAG(DATA61_BSD)
+ * @TAG(DATA61_DORNERWORKS_BSD)
  */
+
 /*
  * This component controls and maintains the GIC for the VM.
  * IRQs must be registered at init time with vm_virq_new(...)
@@ -64,18 +67,6 @@
 #define DDIST(...) do{ printf("VDIST: "); printf(__VA_ARGS__); }while(0)
 #else
 #define DDIST(...) do{}while(0)
-#endif
-
-#ifdef CONFIG_PLAT_ZYNQMP
-#define GIC_DIST_PADDR       (GIC_PADDR + 0x10000)
-#define GIC_CPU_PADDR        (GIC_PADDR + 0x20000)
-#define GIC_VCPU_CNTR_PADDR  (GIC_PADDR + 0x40000)
-#define GIC_VCPU_PADDR       (GIC_PADDR + 0x60000)
-#else
-#define GIC_DIST_PADDR       (GIC_PADDR + 0x1000)
-#define GIC_CPU_PADDR        (GIC_PADDR + 0x2000)
-#define GIC_VCPU_CNTR_PADDR  (GIC_PADDR + 0x4000)
-#define GIC_VCPU_PADDR       (GIC_PADDR + 0x6000)
 #endif
 
 #define IRQ_IDX(irq) ((irq) / 32)
@@ -724,15 +715,13 @@ vm_inject_IRQ(virq_handle_t virq)
 }
 
 /*
- * 1) completely virtual the distributor
- * 2) remap vcpu to cpu. Full access
+ * 1) completely virtualize the distributor
  */
 int
 vm_install_vgic(vm_t* vm)
 {
-    struct device dist, vcpu;
+    struct device dist;
     struct vgic* vgic;
-    void* addr;
     int err;
 
     vgic = malloc(sizeof(*vgic));
@@ -762,33 +751,6 @@ vm_install_vgic(vm_t* vm)
         return -1;
     }
 
-    /* Remap VCPU to CPU */
-    vcpu = dev_vgic_vcpu;
-    if (vcpu.attr & DEV_ATTR_MULTI_MAP) {
-        addr = map_multi_map_device(vm, vcpu.pstart, dev_vgic_cpu.pstart, seL4_AllRights, &vcpu);
-    } else {
-        addr = map_vm_device(vm, vcpu.pstart, dev_vgic_cpu.pstart, seL4_AllRights);
-    }
-
-    if (vcpu.attr & DEV_ATTR_MULTI_MAP) {
-        addr = map_multi_map_device(vm, vcpu.pstart + 0x10000, dev_vgic_cpu.pstart + 0x1000, seL4_AllRights, &vcpu);
-    } else {
-        addr = map_vm_device(vm, vcpu.pstart + 0x10000, dev_vgic_cpu.pstart + 0x1000, seL4_AllRights);
-    }
-
-    assert(addr);
-    if (!addr) {
-        free(dist.priv);
-        return -1;
-    }
-    vcpu.pstart = dev_vgic_cpu.pstart;
-    err = vm_add_device(vm, &vcpu);
-    assert(!err);
-    if (err) {
-        free(dist.priv);
-        return -1;
-    }
-
     return 0;
 }
 
@@ -796,28 +758,8 @@ const struct device dev_vgic_dist = {
     .devid = DEV_VGIC_DIST,
     .attr = DEV_ATTR_EMU,
     .name = "vgic.distributor",
-    .pstart = GIC_DIST_PADDR,
-    .size = 0x1000,
+    .pstart = GIC_PADDR,
+    .size = 0x10000,
     .handle_page_fault = &handle_vgic_dist_fault,
-    .priv = NULL,
-};
-
-const struct device dev_vgic_cpu = {
-    .devid = DEV_VGIC_CPU,
-    .attr = DEV_ATTR_NONE,
-    .name = "vgic.cpu_interface",
-    .pstart = GIC_CPU_PADDR,
-    .size = 0x1000,
-    .handle_page_fault = NULL,
-    .priv = NULL,
-};
-
-const struct device dev_vgic_vcpu = {
-    .devid = DEV_VGIC_VCPU,
-    .attr = DEV_ATTR_MULTI_MAP,
-    .name = "vgic.vcpu_interface",
-    .pstart = GIC_VCPU_PADDR,
-    .size = 0x1000,
-    .handle_page_fault = NULL,
     .priv = NULL,
 };
