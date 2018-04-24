@@ -69,6 +69,13 @@
 #define DDIST(...) do{}while(0)
 #endif
 
+#define GIC_500_GRP0     (1 << 0)
+#define GIC_500_GRP1_NS  (1 << 1)
+#define GIC_500_GRP1_S   (1 << 2)
+#define GIC_500_ARE_S    (1 << 4)
+
+#define GIC_500_ENABLED GIC_500_ARE_S | GIC_500_GRP1_NS | GIC_500_GRP0
+
 #define IRQ_IDX(irq) ((irq) / 32)
 #define IRQ_BIT(irq) (1U << ((irq) % 32))
 
@@ -100,44 +107,52 @@ static inline void virq_ack(struct virq_handle* irq)
 
 /* Memory map for GIC distributer */
 struct gic_dist_map {
-    uint32_t enable;                /* 0x000 */
-    uint32_t ic_type;               /* 0x004 */
-    uint32_t dist_ident;            /* 0x008 */
-    uint32_t res1[29];              /* [0x00C, 0x080) */
-
-    uint32_t security[32];          /* [0x080, 0x100) */
+    uint32_t ctlr;                /* 0x0000 */
+    uint32_t typer;               /* 0x0004 */
+    uint32_t iidr;                /* 0x0008 */
+    uint32_t res1[13];            /* [0x000C, 0x0040) */
+    uint32_t setspi_nsr;          /* 0x0040 */
+    uint32_t res2;                /* 0x0044 */
+    uint32_t clrspi_nsr;          /* 0x0048 */
+    uint32_t res3;                /* 0x004C */
+    uint32_t setspi_sr;           /* 0x0050 */
+    uint32_t res4;                /* 0x0054 */
+    uint32_t clrspi_sr;           /* 0x0058 */
+    uint32_t res5[9];             /* [0x005C, 0x0080) */
+    uint32_t igrouprn[32];        /* [0x0080, 0x0100) */
 
     uint32_t enable_set[32];        /* [0x100, 0x180) */
     uint32_t enable_clr[32];        /* [0x180, 0x200) */
     uint32_t pending_set[32];       /* [0x200, 0x280) */
     uint32_t pending_clr[32];       /* [0x280, 0x300) */
-    uint32_t active[32];            /* [0x300, 0x380) */
-    uint32_t res2[32];              /* [0x380, 0x400) */
+    uint32_t active_set[32];        /* [0x300, 0x380) */
+    uint32_t active_clr[32];        /* [0x380, 0x400) */
 
     uint32_t priority[255];         /* [0x400, 0x7FC) */
-    uint32_t res3;                  /* 0x7FC */
+    uint32_t res6;                  /* 0x7FC */
 
-    uint32_t targets[255];            /* [0x800, 0xBFC) */
-    uint32_t res4;                  /* 0xBFC */
+    uint32_t targets[255];          /* [0x800, 0xBFC) */
+    uint32_t res7;                  /* 0xBFC */
 
-    uint32_t config[64];             /* [0xC00, 0xD00) */
-
-    uint32_t spi[32];               /* [0xD00, 0xD80) */
-    uint32_t res5[20];              /* [0xD80, 0xDD0) */
-    uint32_t res6;                  /* 0xDD0 */
-    uint32_t legacy_int;            /* 0xDD4 */
-    uint32_t res7[2];               /* [0xDD8, 0xDE0) */
-    uint32_t match_d;               /* 0xDE0 */
-    uint32_t enable_d;              /* 0xDE4 */
-    uint32_t res8[70];               /* [0xDE8, 0xF00) */
-
-    uint32_t sgi_control;           /* 0xF00 */
-    uint32_t res9[3];               /* [0xF04, 0xF10) */
+    uint32_t config[64];            /* [0xC00, 0xD00) */
+    uint32_t group_mod[64];         /* [0xD00, 0xE00) */
+    uint32_t nsacr[64];             /* [0xE00, 0xF00) */
+    uint32_t sgir;                  /* 0xF00 */
+    uint32_t res8[3];               /* [0xF00, 0xF10) */
     uint32_t sgi_pending_clr[4];    /* [0xF10, 0xF20) */
-    uint32_t res10[40];             /* [0xF20, 0xFC0) */
+    uint32_t sgi_pending_set[4];    /* [0xF20, 0xF30) */
+    uint32_t res9[5235];            /* [0x0F30, 0x6100) */
 
-    uint32_t periph_id[12];         /* [0xFC0, 0xFF0) */
-    uint32_t component_id[4];       /* [0xFF0, 0xFFF] */
+    uint64_t irouter[960];          /* [0x6100, 0x7F00) */
+    uint64_t res10[2080];           /* [0x7F00, 0xC000) */
+    uint32_t estatusr;              /* 0xC000 */
+    uint32_t errtestr;              /* 0xC004 */
+    uint32_t res11[31];             /* [0xC008, 0xC084) */
+    uint32_t spisr[30];             /* [0xC084, 0xC0FC) */
+    uint32_t res12[4021];           /* [0xC0FC, 0xFFD0) */
+
+    uint32_t pidrn[8];              /* [0xFFD0, 0xFFF0) */
+    uint32_t cidrn[4];              /* [0xFFD0, 0xFFFC] */
 };
 
 struct lr_of {
@@ -238,18 +253,9 @@ static inline int is_enabled(struct gic_dist_map* gic_dist, int irq)
     return !!(gic_dist->enable_set[IRQ_IDX(irq)] & IRQ_BIT(irq));
 }
 
-static inline void set_active(struct gic_dist_map* gic_dist, int irq, int v)
-{
-    if (v) {
-        gic_dist->active[IRQ_IDX(irq)] |= IRQ_BIT(irq);
-    } else {
-        gic_dist->active[IRQ_IDX(irq)] &= ~IRQ_BIT(irq);
-    }
-}
-
 static inline int is_active(struct gic_dist_map* gic_dist, int irq)
 {
-    return !!(gic_dist->active[IRQ_IDX(irq)] & IRQ_BIT(irq));
+    return !!(gic_dist->active_set[IRQ_IDX(irq)] & IRQ_BIT(irq));
 }
 
 static int list_size = 0;
@@ -352,7 +358,7 @@ static enum gic_dist_action gic_dist_get_action(int offset)
      *  b) allow write access so the VM thinks there is no problem,
      *     but do not honour them
      */
-    if (0x000 <= offset && offset < 0x004) {     /* enable          */
+    if (0x000 <= offset && offset < 0x004) {        /* enable          */
         return ACTION_ENABLE;
     } else if (0x080 <= offset && offset < 0x100) { /* Security        */
         return ACTION_PASSTHROUGH;
@@ -364,22 +370,6 @@ static enum gic_dist_action gic_dist_get_action(int offset)
         return ACTION_PENDING_SET;
     } else if (0x280 <= offset && offset < 0x300) { /* pending_clr     */
         return ACTION_PENDING_CLR;
-    } else if (0x300 <= offset && offset < 0x380) { /* active          */
-        return ACTION_READONLY;
-    } else if (0x400 <= offset && offset < 0x7FC) { /* priority        */
-        return ACTION_READONLY;
-    } else if (0x800 <= offset && offset < 0x8FC) { /* targets         */
-        return ACTION_READONLY;
-    } else if (0xC00 <= offset && offset < 0xD00) { /* config          */
-        return ACTION_READONLY;
-    } else if (0xD00 <= offset && offset < 0xD80) { /* spi config      */
-        return ACTION_READONLY;
-    } else if (0xDD4 <= offset && offset < 0xDD8) { /* legacy_int      */
-        return ACTION_READONLY;
-    } else if (0xDE0 <= offset && offset < 0xDE4) { /* match_d         */
-        return ACTION_READONLY;
-    } else if (0xDE4 <= offset && offset < 0xDE8) { /* enable_d        */
-        return ACTION_READONLY;
     } else if (0xF00 <= offset && offset < 0xF04) { /* sgi_control     */
         return ACTION_PASSTHROUGH;
     } else if (0xF10 <= offset && offset < 0xF10) { /* sgi_pending_clr */
@@ -395,7 +385,7 @@ vgic_dist_enable(struct device* d, vm_t* vm)
 {
     struct gic_dist_map* gic_dist = vgic_priv_get_dist(d);
     DDIST("enabling gic distributer\n");
-    gic_dist->enable = 1;
+    gic_dist->ctlr |= GIC_500_GRP1_NS | GIC_500_ARE_S;
     return 0;
 }
 
@@ -404,7 +394,7 @@ vgic_dist_disable(struct device* d, vm_t* vm)
 {
     struct gic_dist_map* gic_dist = vgic_priv_get_dist(d);
     DDIST("disabling gic distributer\n");
-    gic_dist->enable = 0;
+    gic_dist->ctlr &= ~(GIC_500_GRP1_NS | GIC_500_ARE_S);
     return 0;
 }
 
@@ -459,7 +449,7 @@ vgic_dist_set_pending_irq(struct device* d, vm_t* vm, int irq)
 
     virq_data = virq_find_irq_data(vgic, irq);
     /* If it is enables, inject the IRQ */
-    if (virq_data && gic_dist->enable && is_enabled(gic_dist, irq)) {
+    if (virq_data && (gic_dist->ctlr & GIC_500_GRP1_NS) && is_enabled(gic_dist, irq)) {
         int err;
         DDIST("Pending set: Inject IRQ from pending set (%d)\n", irq);
 
@@ -510,13 +500,12 @@ handle_vgic_dist_fault(struct device* d, vm_t* vm, fault_t* fault)
     act = gic_dist_get_action(offset);
 
     assert(offset >= 0 && offset < d->size);
-
     /* Out of range */
     if (offset < 0 || offset >= sizeof(struct gic_dist_map)) {
         DDIST("offset out of range %x %x\n", offset, sizeof(struct gic_dist_map));
         return ignore_fault(fault);
 
-        /* Read fault */
+    /* Read fault */
     } else if (fault_is_read(fault)) {
         fault_set_data(fault, *reg);
         return advance_fault(fault);
@@ -533,7 +522,7 @@ handle_vgic_dist_fault(struct device* d, vm_t* vm, fault_t* fault)
         case ACTION_ENABLE:
             *reg = fault_emulate(fault, *reg);
             data = fault_get_data(fault);
-            if (data == 1) {
+            if (data == GIC_500_ENABLED) {
                 vgic_dist_enable(d, vm);
             } else if (data == 0) {
                 vgic_dist_disable(d, vm);
@@ -621,36 +610,24 @@ static void vgic_dist_reset(struct device* d)
     struct gic_dist_map* gic_dist;
     gic_dist = vgic_priv_get_dist(d);
     memset(gic_dist, 0, sizeof(*gic_dist));
-    gic_dist->ic_type         = 0x0000fce7; /* RO */
-    gic_dist->dist_ident      = 0x0200043b; /* RO */
-    gic_dist->enable_set[0]   = 0x0000ffff; /* 16bit RO */
-    gic_dist->enable_clr[0]   = 0x0000ffff; /* 16bit RO */
-    gic_dist->config[0]       = 0xaaaaaaaa; /* RO */
-    /* Reset value depends on GIC configuration */
-    gic_dist->config[1]       = 0x55540000;
-    gic_dist->config[2]       = 0x55555555;
-    gic_dist->config[3]       = 0x55555555;
-    gic_dist->config[4]       = 0x55555555;
-    gic_dist->config[5]       = 0x55555555;
-    gic_dist->config[6]       = 0x55555555;
-    gic_dist->config[7]       = 0x55555555;
-    gic_dist->config[8]       = 0x55555555;
-    gic_dist->config[9]       = 0x55555555;
-    gic_dist->config[10]      = 0x55555555;
-    gic_dist->config[11]      = 0x55555555;
-    gic_dist->config[12]      = 0x55555555;
-    gic_dist->config[13]      = 0x55555555;
-    gic_dist->config[14]      = 0x55555555;
-    gic_dist->config[15]      = 0x55555555;
-    /* identification */
-    gic_dist->periph_id[4]    = 0x00000004; /* RO */
-    gic_dist->periph_id[8]    = 0x00000090; /* RO */
-    gic_dist->periph_id[9]    = 0x000000b4; /* RO */
-    gic_dist->periph_id[10]   = 0x0000002b; /* RO */
-    gic_dist->component_id[0] = 0x0000000d; /* RO */
-    gic_dist->component_id[1] = 0x000000f0; /* RO */
-    gic_dist->component_id[2] = 0x00000005; /* RO */
-    gic_dist->component_id[3] = 0x000000b1; /* RO */
+
+    gic_dist->typer            = 0x7B04B0; /* RO */
+    gic_dist->iidr             = 0x1043B ; /* RO */
+
+    gic_dist->enable_set[0]    = 0x0000ffff; /* 16bit RO */
+    gic_dist->enable_clr[0]    = 0x0000ffff; /* 16bit RO */
+
+    gic_dist->config[0]        = 0xaaaaaaaa; /* RO */
+
+    gic_dist->pidrn[0]         = 0x44;     /* RO */
+    gic_dist->pidrn[4]         = 0x92;     /* RO */
+    gic_dist->pidrn[5]         = 0xB4;     /* RO */
+    gic_dist->pidrn[6]         = 0x3B;     /* RO */
+
+    gic_dist->cidrn[0]         = 0x0D;     /* RO */
+    gic_dist->cidrn[1]         = 0xF0;     /* RO */
+    gic_dist->cidrn[2]         = 0x05;     /* RO */
+    gic_dist->cidrn[3]         = 0xB1;     /* RO */
 }
 
 virq_handle_t
