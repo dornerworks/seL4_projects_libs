@@ -26,6 +26,7 @@ typedef struct vm vm_t;
 enum devid {
     DEV_RAM,
     DEV_VGIC_DIST,
+    DEV_VGIC_REDIST,
     DEV_VGIC_CPU,
     DEV_VGIC_VCPU,
     DEV_IRQ_COMBINER,

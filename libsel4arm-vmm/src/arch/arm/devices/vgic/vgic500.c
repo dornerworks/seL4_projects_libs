@@ -155,6 +155,31 @@ struct gic_dist_map {
     uint32_t cidrn[4];              /* [0xFFD0, 0xFFFC] */
 };
 
+/* Memory map for GIC Redistributor Registers for control and physical LPI's */
+struct gic_rdist_map {          /* Starting */
+    uint32_t    ctlr;           /* 0x0000 */
+    uint32_t    iidr;           /* 0x0004 */
+    uint64_t    typer;          /* 0x008 */
+    uint32_t    res0;           /* 0x0010 */
+    uint32_t    waker;          /* 0x0014 */
+    uint32_t    res1[21];       /* 0x0018 */
+    uint64_t    propbaser;      /* 0x0070 */
+    uint64_t    pendbaser;      /* 0x0078 */
+    uint32_t    res2[16340];    /* 0x0080 */
+    uint32_t    pidr4;          /* 0xFFD0 */
+    uint32_t    pidr5;          /* 0xFFD4 */
+    uint32_t    pidr6;          /* 0xFFD8 */
+    uint32_t    pidr7;          /* 0xFFDC */
+    uint32_t    pidr0;          /* 0xFFE0 */
+    uint32_t    pidr1;          /* 0xFFE4 */
+    uint32_t    pidr2;          /* 0xFFE8 */
+    uint32_t    pidr3;          /* 0xFFEC */
+    uint32_t    cidr0;          /* 0xFFF0 */
+    uint32_t    cidr1;          /* 0xFFF4 */
+    uint32_t    cidr2;          /* 0xFFF8 */
+    uint32_t    cidr3;          /* 0xFFFC */
+};
+
 struct lr_of {
     struct virq_handle* virq_data;
     struct lr_of* next;
@@ -169,6 +194,8 @@ struct vgic {
     struct virq_handle* virqs[MAX_VIRQS];
 /// Virtual distributer registers
     struct gic_dist_map *dist;
+/// Virtual redistributer registers for control and physical LPIs
+    struct gic_rdist_map *rdist;
 };
 
 static struct virq_handle* virq_find_irq_data(struct vgic* vgic, int virq) {
@@ -211,6 +238,12 @@ static inline struct gic_dist_map* vgic_priv_get_dist(struct device* d) {
     assert(d);
     assert(d->priv);
     return vgic_device_get_vgic(d)->dist;
+}
+
+static inline struct gic_rdist_map* vgic_priv_get_rdist(struct device* d) {
+    assert(d);
+    assert(d->priv);
+    return vgic_device_get_vgic(d)->rdist;
 }
 
 static inline struct virq_handle** vgic_priv_get_lr(struct device* d) {
@@ -378,6 +411,11 @@ static enum gic_dist_action gic_dist_get_action(int offset)
         return ACTION_READONLY;
     }
     return ACTION_UNKNOWN;
+}
+
+static enum gic_dist_action gic_rdist_get_action(int offset)
+{
+    return ACTION_READONLY;
 }
 
 static int
@@ -605,6 +643,47 @@ handle_vgic_dist_fault(struct device* d, vm_t* vm, fault_t* fault)
     return -1;
 }
 
+static int
+handle_vgic_rdist_fault(struct device* d, vm_t* vm, fault_t* fault)
+{
+    struct gic_rdist_map* gic_rdist;
+    int offset;
+    enum gic_dist_action act;
+    uint32_t *reg;
+
+    gic_rdist = vgic_priv_get_rdist(d);
+    offset = fault_get_address(fault) - d->pstart;
+
+    reg = (uint32_t*)( (uintptr_t)gic_rdist + (offset - (offset % 4)));
+
+    assert(offset >= 0 && offset < d->size);
+
+    act = gic_rdist_get_action(offset);
+
+    /* Out of range */
+    if (offset < 0 || offset >= sizeof(struct gic_rdist_map)) {
+        DDIST("rdist offset out of range %x %x\n", offset, sizeof(struct gic_rdist_map));
+        return ignore_fault(fault);
+
+    /* Read fault */
+    } else if (fault_is_read(fault)) {
+        fault_set_data(fault, *reg);
+        return advance_fault(fault);
+    } else {
+        switch (act) {
+        case ACTION_READONLY:
+            return ignore_fault(fault);
+
+        case ACTION_UNKNOWN:
+        default:
+            DDIST("Unknown action on offset 0x%x\n", offset);
+            return ignore_fault(fault);
+        }
+    }
+    abandon_fault(fault);
+    return -1;
+}
+
 static void vgic_dist_reset(struct device* d)
 {
     struct gic_dist_map* gic_dist;
@@ -628,6 +707,27 @@ static void vgic_dist_reset(struct device* d)
     gic_dist->cidrn[1]         = 0xF0;     /* RO */
     gic_dist->cidrn[2]         = 0x05;     /* RO */
     gic_dist->cidrn[3]         = 0xB1;     /* RO */
+}
+
+static void vgic_rdist_reset(struct device* d)
+{
+    struct gic_rdist_map* gic_rdist;
+    gic_rdist = vgic_priv_get_rdist(d);
+
+    memset(gic_rdist, 0, sizeof(*gic_rdist));
+
+    gic_rdist->typer           = 0x1;      /* RO */
+    gic_rdist->iidr            = 0x1143B;  /* RO */
+
+    gic_rdist->pidr0           = 0x93;     /* RO */
+    gic_rdist->pidr1           = 0xB4;     /* RO */
+    gic_rdist->pidr2           = 0x3B;     /* RO */
+    gic_rdist->pidr4           = 0x44;     /* RO */
+
+    gic_rdist->cidr0           = 0x0D;     /* RO */
+    gic_rdist->cidr1           = 0xF0;     /* RO */
+    gic_rdist->cidr2           = 0x05;     /* RO */
+    gic_rdist->cidr3           = 0xB1;     /* RO */
 }
 
 virq_handle_t
@@ -693,11 +793,13 @@ vm_inject_IRQ(virq_handle_t virq)
 
 /*
  * 1) completely virtualize the distributor
+ * 2) completely virtualize the redistributor
  */
 int
 vm_install_vgic(vm_t* vm)
 {
     struct device dist;
+    struct device rdist;
     struct vgic* vgic;
     int err;
 
@@ -728,6 +830,22 @@ vm_install_vgic(vm_t* vm)
         return -1;
     }
 
+    /* Redistributor */
+    rdist = dev_vgic_redist;
+    vgic->rdist = map_emulated_device(vm, &dev_vgic_redist);
+    assert(vgic->rdist);
+    if (vgic->rdist == NULL) {
+        return -1;
+    }
+
+    rdist.priv = (void*)vgic;
+    vgic_rdist_reset(&rdist);
+    err = vm_add_device(vm, &rdist);
+    if (err) {
+        free(rdist.priv);
+        return -1;
+    }
+
     return 0;
 }
 
@@ -735,8 +853,18 @@ const struct device dev_vgic_dist = {
     .devid = DEV_VGIC_DIST,
     .attr = DEV_ATTR_EMU,
     .name = "vgic.distributor",
-    .pstart = GIC_PADDR,
+    .pstart = GIC_DIST_PADDR,
     .size = 0x10000,
     .handle_page_fault = &handle_vgic_dist_fault,
+    .priv = NULL,
+};
+
+const struct device dev_vgic_redist = {
+    .devid = DEV_VGIC_REDIST,
+    .attr = DEV_ATTR_EMU,
+    .name = "vgic.redistributor",
+    .pstart = GIC_REDIST_PADDR,
+    .size = 0x10000,
+    .handle_page_fault = &handle_vgic_rdist_fault,
     .priv = NULL,
 };

@@ -13,8 +13,9 @@
 #include <sel4arm-vmm/plat/device_map.h>
 #include <sel4arm-vmm/vm.h>
 
-#define GIC_PADDR   0x51A00000
-#define MAX_VIRQS   512
+#define GIC_DIST_PADDR     0x51A00000
+#define GIC_REDIST_PADDR   0x51B00000
+#define MAX_VIRQS          512
 
 /* Devices that the VM Needs */
 extern const struct device dev_vram;

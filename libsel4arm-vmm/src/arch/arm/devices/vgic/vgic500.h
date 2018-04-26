@@ -15,5 +15,6 @@
 #include "../../../../vm.h"
 
 extern const struct device dev_vgic_dist;
+extern const struct device dev_vgic_redist;
 
 int handle_vgic_maintenance(vm_t* vm, int idx);
