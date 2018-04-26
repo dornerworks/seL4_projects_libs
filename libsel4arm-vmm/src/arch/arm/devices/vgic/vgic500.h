@@ -16,5 +16,6 @@
 
 extern const struct device dev_vgic_dist;
 extern const struct device dev_vgic_redist;
+extern const struct device dev_vgic_redist_sgi;
 
 int handle_vgic_maintenance(vm_t* vm, int idx);

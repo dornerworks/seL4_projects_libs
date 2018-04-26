@@ -76,12 +76,19 @@
 
 #define GIC_500_ENABLED GIC_500_ARE_S | GIC_500_GRP1_NS | GIC_500_GRP0
 
+#define GIC_SGI_OFFSET  0x10000
+
+#define GIC_SGI_IRQ_MIN 16
+#define GIC_SGI_IRQ_MAX 32
+
 #define IRQ_IDX(irq) ((irq) / 32)
 #define IRQ_BIT(irq) (1U << ((irq) % 32))
 
 #define not_pending(...) !is_pending(__VA_ARGS__)
+#define sgi_not_pending(...) !sgi_is_pending(__VA_ARGS__)
 #define not_active(...)  !is_active(__VA_ARGS__)
 #define not_enabled(...) !is_enabled(__VA_ARGS__)
+#define sgi_not_enabled(...) !sgi_is_enabled(__VA_ARGS__)
 
 enum gic_dist_action {
     ACTION_READONLY,
@@ -180,6 +187,30 @@ struct gic_rdist_map {          /* Starting */
     uint32_t    cidr3;          /* 0xFFFC */
 };
 
+/* Memory map for the GIC Redistributor Registers for the SGI and PPI's */
+struct gic_rdist_sgi_ppi_map {  /* Starting */
+    uint32_t    res0[32];       /* 0x0000 */
+    uint32_t    igroup[32];     /* 0x0080 */
+    uint32_t    isenable[32];   /* 0x0100 */
+    uint32_t    icenable[32];   /* 0x0180 */
+    uint32_t    ispend[32];     /* 0x0200 */
+    uint32_t    icpend[32];     /* 0x0280 */
+    uint32_t    isactive[32];   /* 0x0300 */
+    uint32_t    icactive[32];   /* 0x0380 */
+    uint32_t    ipriorityrn[8]; /* 0x0400 */
+    uint32_t    res1[504];      /* 0x0420 */
+    uint32_t    icfgrn_ro;      /* 0x0C00 */
+    uint32_t    icfgrn_rw;      /* 0x0C04 */
+    uint32_t    res2[62];       /* 0x0C08 */
+    uint32_t    igrpmod[64];    /* 0x0D00 */
+    uint32_t    nsac;           /* 0x0E00 */
+    uint32_t    res11[11391];   /* 0x0E04 */
+    uint32_t    miscstatsr;     /* 0xC000 */
+    uint32_t    res3[31];       /* 0xC004 */
+    uint32_t    ppisr;          /* 0xC080 */
+    uint32_t    res4[4062];     /* 0xC084 */
+};
+
 struct lr_of {
     struct virq_handle* virq_data;
     struct lr_of* next;
@@ -196,6 +227,8 @@ struct vgic {
     struct gic_dist_map *dist;
 /// Virtual redistributer registers for control and physical LPIs
     struct gic_rdist_map *rdist;
+/// Virtual redistributer for SGI and PPIs
+    struct gic_rdist_sgi_ppi_map *sgi;
 };
 
 static struct virq_handle* virq_find_irq_data(struct vgic* vgic, int virq) {
@@ -246,6 +279,12 @@ static inline struct gic_rdist_map* vgic_priv_get_rdist(struct device* d) {
     return vgic_device_get_vgic(d)->rdist;
 }
 
+static inline struct gic_rdist_sgi_ppi_map* vgic_priv_get_rdist_sgi(struct device* d) {
+    assert(d);
+    assert(d->priv);
+    return vgic_device_get_vgic(d)->sgi;
+}
+
 static inline struct virq_handle** vgic_priv_get_lr(struct device* d) {
     assert(d);
     assert(d->priv);
@@ -270,6 +309,22 @@ static inline int is_pending(struct gic_dist_map* gic_dist, int irq)
     return !!(gic_dist->pending_set[IRQ_IDX(irq)] & IRQ_BIT(irq));
 }
 
+static inline void sgi_set_pending(struct gic_rdist_sgi_ppi_map* gic_sgi, int irq, int v)
+{
+    if (v) {
+        gic_sgi->ispend[IRQ_IDX(irq)] |= IRQ_BIT(irq);
+        gic_sgi->icpend[IRQ_IDX(irq)] |= IRQ_BIT(irq);
+    } else {
+        gic_sgi->ispend[IRQ_IDX(irq)] &= ~IRQ_BIT(irq);
+        gic_sgi->icpend[IRQ_IDX(irq)] &= ~IRQ_BIT(irq);
+    }
+}
+
+static inline int sgi_is_pending(struct gic_rdist_sgi_ppi_map* gic_sgi, int irq)
+{
+    return !!(gic_sgi->ispend[IRQ_IDX(irq)] & IRQ_BIT(irq));
+}
+
 static inline void set_enable(struct gic_dist_map* gic_dist, int irq, int v)
 {
     if (v) {
@@ -281,14 +336,35 @@ static inline void set_enable(struct gic_dist_map* gic_dist, int irq, int v)
     }
 }
 
+static inline void sgi_set_enable(struct gic_rdist_sgi_ppi_map* gic_sgi, int irq, int v)
+{
+    if (v) {
+        gic_sgi->isenable[IRQ_IDX(irq)] |= IRQ_BIT(irq);
+        gic_sgi->icenable[IRQ_IDX(irq)] |= IRQ_BIT(irq);
+    } else {
+        gic_sgi->isenable[IRQ_IDX(irq)] &= ~IRQ_BIT(irq);
+        gic_sgi->icenable[IRQ_IDX(irq)] &= ~IRQ_BIT(irq);
+    }
+}
+
 static inline int is_enabled(struct gic_dist_map* gic_dist, int irq)
 {
     return !!(gic_dist->enable_set[IRQ_IDX(irq)] & IRQ_BIT(irq));
 }
 
+static inline int sgi_is_enabled(struct gic_rdist_sgi_ppi_map* gic_sgi, int irq)
+{
+    return !!(gic_sgi->isenable[IRQ_IDX(irq)] & IRQ_BIT(irq));
+}
+
 static inline int is_active(struct gic_dist_map* gic_dist, int irq)
 {
     return !!(gic_dist->active_set[IRQ_IDX(irq)] & IRQ_BIT(irq));
+}
+
+static inline int sgi_is_active(struct gic_rdist_sgi_ppi_map* gic_sgi, int irq)
+{
+    return !!(gic_sgi->isactive[IRQ_IDX(irq)] & IRQ_BIT(irq));
 }
 
 static int list_size = 0;
@@ -346,18 +422,24 @@ int handle_vgic_maintenance(vm_t* vm, int idx)
     /* STATE d) */
     struct device* d;
     struct gic_dist_map* gic_dist;
+    struct gic_rdist_sgi_ppi_map* gic_sgi;
     struct virq_handle** lr;
     struct lr_of** lrof_ptr;
 
     d = vm_find_device_by_id(vm, DEV_VGIC_DIST);
     assert(d);
+    gic_sgi = vgic_priv_get_rdist_sgi(d);
     gic_dist = vgic_priv_get_dist(d);
     lr = vgic_priv_get_lr(d);
     assert(lr[idx]);
 
     /* Clear pending */
     DIRQ("Maintenance IRQ %d\n", lr[idx]->virq);
-    set_pending(gic_dist, lr[idx]->virq, false);
+    if (lr[idx]->virq >= GIC_SGI_IRQ_MAX) {
+        set_pending(gic_dist, lr[idx]->virq, false);
+    } else {
+        sgi_set_pending(gic_sgi, lr[idx]->virq, false);
+    }
     virq_ack(lr[idx]);
 
     /* Check the overflow list for pending IRQs */
@@ -418,6 +500,18 @@ static enum gic_dist_action gic_rdist_get_action(int offset)
     return ACTION_READONLY;
 }
 
+static enum gic_dist_action gic_sgi_get_action(int offset)
+{
+    if (0x100 <= offset && offset < 0x180) {        /* enable_set      */
+        return ACTION_ENABLE_SET;
+    } else if (0x180 <= offset && offset < 0x200) { /* enable_clr      */
+        return ACTION_ENABLE_CLR;
+    } else {
+        return ACTION_READONLY;
+    }
+    return ACTION_UNKNOWN;
+}
+
 static int
 vgic_dist_enable(struct device* d, vm_t* vm)
 {
@@ -444,16 +538,19 @@ vgic_dist_enable_irq(struct device* d, vm_t* vm, int irq)
     struct vgic* vgic;
     gic_dist = vgic_priv_get_dist(d);
     vgic = vgic_device_get_vgic(d);
-    DDIST("enabling irq %d\n", irq);
-    set_enable(gic_dist, irq, true);
-    virq_data = virq_find_irq_data(vgic, irq);
-    if (virq_data) {
-        /* STATE b) */
-        if (not_pending(gic_dist, virq_data->virq)) {
-            virq_ack(virq_data);
+    if (irq >= GIC_SGI_IRQ_MAX) {
+        DDIST("dist enabling irq %d\n", irq);
+        set_enable(gic_dist, irq, true);
+        virq_data = virq_find_irq_data(vgic, irq);
+        if (virq_data) {
+            /* STATE b) */
+            if (not_pending(gic_dist, virq_data->virq)) {
+                DDIST("IRQ not pending\n");
+                virq_ack(virq_data);
+            }
+        } else {
+            DDIST("enabled irq %d has no handle\n", irq);
         }
-    } else {
-        DDIST("enabled irq %d has no handle", irq);
     }
     return 0;
 }
@@ -463,9 +560,46 @@ vgic_dist_disable_irq(struct device* d, vm_t* vm, int irq)
 {
     /* STATE g) */
     struct gic_dist_map* gic_dist = vgic_priv_get_dist(d);
-    if (irq >= 16) {
-        DDIST("disabling irq %d\n", irq);
+    if (irq >= GIC_SGI_IRQ_MAX) {
+        DDIST("dist disabling irq %d\n", irq);
         set_enable(gic_dist, irq, false);
+    }
+    return 0;
+}
+
+static int
+vgic_sgi_enable_irq(struct device* d, vm_t* vm, int irq)
+{
+    struct gic_rdist_sgi_ppi_map* gic_sgi;
+    struct virq_handle* virq_data;
+    struct vgic* vgic;
+    gic_sgi = vgic_priv_get_rdist_sgi(d);
+    vgic = vgic_device_get_vgic(d);
+    if (irq >= GIC_SGI_IRQ_MIN) {
+        DDIST("sgi enabling irq %d\n", irq);
+        sgi_set_enable(gic_sgi, irq, true);
+        virq_data = virq_find_irq_data(vgic, irq);
+        if (virq_data) {
+            /* STATE b) */
+            if (sgi_not_pending(gic_sgi, virq_data->virq)) {
+                DDIST("IRQ not pending\n");
+                virq_ack(virq_data);
+            }
+        } else {
+            DDIST("enabled irq %d has no handle\n", irq);
+        }
+    }
+    return 0;
+}
+
+static int
+vgic_sgi_disable_irq(struct device* d, vm_t* vm, int irq)
+{
+    /* STATE g) */
+    struct gic_rdist_sgi_ppi_map* gic_sgi = vgic_priv_get_rdist_sgi(d);
+    if (irq >= GIC_SGI_IRQ_MIN) {
+        DDIST("sgi disabling irq %d\n", irq);
+        sgi_set_enable(gic_sgi, irq, false);
     }
     return 0;
 }
@@ -517,6 +651,58 @@ vgic_dist_clr_pending_irq(struct device* d, vm_t* vm, int irq)
     struct gic_dist_map* gic_dist = vgic_priv_get_dist(d);
     DDIST("clr pending irq %d\n", irq);
     set_pending(gic_dist, irq, false);
+    return 0;
+}
+
+static int
+vgic_sgi_set_pending_irq(struct device* d, vm_t* vm, int irq)
+{
+#ifdef CONFIG_LIB_SEL4_ARM_VMM_VCHAN_SUPPORT
+    vm->lock();
+#endif //CONCONFIG_LIB_SEL4_ARM_VMM_VCHAN_SUPPORT
+
+    /* STATE c) */
+    struct gic_dist_map* gic_dist;
+    struct gic_rdist_sgi_ppi_map* gic_sgi;
+    struct vgic* vgic;
+    struct virq_handle* virq_data;
+
+    gic_dist = vgic_priv_get_dist(d);
+    gic_sgi = vgic_priv_get_rdist_sgi(d);
+    vgic = vgic_device_get_vgic(d);
+
+    virq_data = virq_find_irq_data(vgic, irq);
+    /* If it is enables, inject the IRQ */
+    if (virq_data && (gic_dist->ctlr & GIC_500_GRP1_NS) && sgi_is_enabled(gic_sgi, irq)) {
+        int err;
+        DDIST("Pending set: Inject IRQ from pending set (%d)\n", irq);
+
+        sgi_set_pending(gic_sgi, virq_data->virq, true);
+        err = vgic_vcpu_inject_irq(d, vm, virq_data);
+        assert(!err);
+
+#ifdef CONFIG_LIB_SEL4_ARM_VMM_VCHAN_SUPPORT
+        vm->unlock();
+#endif //CONCONFIG_LIB_SEL4_ARM_VMM_VCHAN_SUPPORT
+        return err;
+    } else {
+        /* No further action */
+        DDIST("IRQ not enabled (%d) for %s\n", irq, vm->name);
+    }
+
+#ifdef CONFIG_LIB_SEL4_ARM_VMM_VCHAN_SUPPORT
+    vm->unlock();
+#endif //CONCONFIG_LIB_SEL4_ARM_VMM_VCHAN_SUPPORT
+
+    return 0;
+}
+
+static int
+vgic_sgi_clr_pending_irq(struct device* d, vm_t* vm, int irq)
+{
+    struct gic_rdist_sgi_ppi_map* gic_sgi = vgic_priv_get_rdist_sgi(d);
+    DDIST("clr pending irq %d\n", irq);
+    sgi_set_pending(gic_sgi, irq, false);
     return 0;
 }
 
@@ -684,6 +870,81 @@ handle_vgic_rdist_fault(struct device* d, vm_t* vm, fault_t* fault)
     return -1;
 }
 
+static int
+handle_vgic_sgi_fault(struct device* d, vm_t* vm, fault_t* fault)
+{
+    struct gic_rdist_sgi_ppi_map* gic_rdist_sgi;
+    int offset;
+    enum gic_dist_action act;
+    uint32_t mask;
+    uint32_t *reg;
+
+    gic_rdist_sgi = vgic_priv_get_rdist_sgi(d);
+    mask = fault_get_data_mask(fault);
+    offset = fault_get_address(fault) - d->pstart;
+
+    reg = (uint32_t*)( (uintptr_t)gic_rdist_sgi + (offset - (offset % 4)));
+
+    assert(offset >= 0 && offset < d->size);
+
+    act = gic_sgi_get_action(offset);
+
+    /* Out of range */
+    if (offset < 0 || offset >= sizeof(struct gic_rdist_sgi_ppi_map)) {
+        DDIST("sgi offset out of range %x %x\n", offset, sizeof(struct gic_rdist_sgi_ppi_map));
+        return ignore_fault(fault);
+
+    /* Read fault */
+    } else if (fault_is_read(fault)) {
+        fault_set_data(fault, *reg);
+        return advance_fault(fault);
+    } else {
+        uint32_t data;
+        switch (act) {
+        case ACTION_READONLY:
+            return ignore_fault(fault);
+        case ACTION_ENABLE_SET:
+            data = fault_get_data(fault);
+
+            /* Mask the data to write */
+            data &= mask;
+            /* Mask bits that are already set */
+            data &= ~(*reg);
+
+            while (data) {
+                int irq;
+                irq = CTZ(data);
+                data &= ~(1U << irq);
+                irq += (offset - 0x100) * 8;
+                vgic_sgi_enable_irq(d, vm, irq);
+            }
+            return ignore_fault(fault);
+
+        case ACTION_ENABLE_CLR:
+            data = fault_get_data(fault);
+            /* Mask the data to write */
+            data &= mask;
+            /* Mask bits that are already clear */
+            data &= *reg;
+            while (data) {
+                int irq;
+                irq = CTZ(data);
+                data &= ~(1U << irq);
+                irq += (offset - 0x180) * 8;
+                vgic_sgi_disable_irq(d, vm, irq);
+            }
+            return ignore_fault(fault);
+
+        case ACTION_UNKNOWN:
+        default:
+            DDIST("Unknown action on offset 0x%x\n", offset);
+            return ignore_fault(fault);
+        }
+    }
+    abandon_fault(fault);
+    return -1;
+}
+
 static void vgic_dist_reset(struct device* d)
 {
     struct gic_dist_map* gic_dist;
@@ -728,6 +989,16 @@ static void vgic_rdist_reset(struct device* d)
     gic_rdist->cidr1           = 0xF0;     /* RO */
     gic_rdist->cidr2           = 0x05;     /* RO */
     gic_rdist->cidr3           = 0xB1;     /* RO */
+}
+
+static void vgic_rdist_sgi_reset(struct device* d)
+{
+    struct gic_rdist_sgi_ppi_map* gic_sgi;
+    gic_sgi = vgic_priv_get_rdist_sgi(d);
+
+    memset(gic_sgi, 0, sizeof(*gic_sgi));
+
+    gic_sgi->isactive[0]       = 0xaaaaaaaa;
 }
 
 virq_handle_t
@@ -780,7 +1051,11 @@ vm_inject_IRQ(virq_handle_t virq)
         return -1;
     }
 
-    vgic_dist_set_pending_irq(vgic_device, vm, virq->virq);
+    if (virq->virq >= GIC_SGI_IRQ_MAX) {
+        vgic_dist_set_pending_irq(vgic_device, vm, virq->virq);
+    } else {
+        vgic_sgi_set_pending_irq(vgic_device, vm, virq->virq);
+    }
 
     if (!fault_handled(vm->fault) && fault_is_wfi(vm->fault)) {
         ignore_fault(vm->fault);
@@ -794,12 +1069,14 @@ vm_inject_IRQ(virq_handle_t virq)
 /*
  * 1) completely virtualize the distributor
  * 2) completely virtualize the redistributor
+ * 3) completely virtualize the SGI page of the redistributor
  */
 int
 vm_install_vgic(vm_t* vm)
 {
     struct device dist;
     struct device rdist;
+    struct device sgi;
     struct vgic* vgic;
     int err;
 
@@ -846,6 +1123,22 @@ vm_install_vgic(vm_t* vm)
         return -1;
     }
 
+    /* Redistributor SGI */
+    sgi = dev_vgic_redist_sgi;
+    vgic->sgi = map_emulated_device(vm, &dev_vgic_redist_sgi);
+    assert(vgic->sgi);
+    if (vgic->sgi == NULL) {
+        return -1;
+    }
+
+    sgi.priv = (void*)vgic;
+    vgic_rdist_sgi_reset(&sgi);
+    err = vm_add_device(vm, &sgi);
+    if (err) {
+        free(sgi.priv);
+        return -1;
+    }
+
     return 0;
 }
 
@@ -866,5 +1159,15 @@ const struct device dev_vgic_redist = {
     .pstart = GIC_REDIST_PADDR,
     .size = 0x10000,
     .handle_page_fault = &handle_vgic_rdist_fault,
+    .priv = NULL,
+};
+
+const struct device dev_vgic_redist_sgi = {
+    .devid = DEV_VGIC_REDIST_SGI,
+    .attr = DEV_ATTR_EMU,
+    .name = "vgic.redistributor_sgi",
+    .pstart = GIC_REDIST_PADDR + GIC_SGI_OFFSET,
+    .size = 0x10000,
+    .handle_page_fault = &handle_vgic_sgi_fault,
     .priv = NULL,
 };
