@@ -385,7 +385,7 @@ vgic_vcpu_inject_irq(struct device* d, vm_t *vm, struct virq_handle *irq)
             break;
         }
     }
-    err = seL4_ARM_VCPU_InjectIRQ(vcpu, irq->virq, 0, 0, i);
+    err = seL4_ARM_VCPU_InjectIRQ(vcpu, irq->virq, 0, 1, i);
     assert((i < 4) || err);
     if (!err) {
         /* Shadow */
