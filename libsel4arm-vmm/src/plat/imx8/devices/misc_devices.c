@@ -20,3 +20,23 @@ const struct device dev_uart0 = {
     .handle_page_fault = NULL,
     .priv = NULL
 };
+
+const struct device dev_uart0_dma = {
+    .devid = DEV_CUSTOM,
+    .attr = DEV_ATTR_NONE,
+    .name = "uart0",
+    .pstart = UART0_DMA_PADDR,
+    .size = 0x10000,
+    .handle_page_fault = NULL,
+    .priv = NULL
+};
+
+const struct device dev_mu = {
+    .devid = DEV_CUSTOM,
+    .attr = DEV_ATTR_NONE,
+    .name = "mu",
+    .pstart = MU_PADDR,
+    .size = 0x1000,
+    .handle_page_fault = NULL,
+    .priv = NULL
+};

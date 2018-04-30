@@ -21,3 +21,5 @@
 extern const struct device dev_vram;
 
 extern const struct device dev_uart0;
+extern const struct device dev_mu;
+extern const struct device dev_uart0_dma;

@@ -16,4 +16,8 @@
 #define RAM_SIZE (RAM_END - RAM_BASE)
 
 /* UART */
-#define UART0_PADDR   0x5A060000
+#define UART0_PADDR     0x5A060000
+#define UART0_DMA_PADDR 0x5A460000
+
+/* Other Devices */
+#define MU_PADDR        0x5D1B0000
