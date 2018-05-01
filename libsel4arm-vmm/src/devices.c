@@ -261,7 +261,7 @@ map_emulated_device(vm_t* vm, struct device *d)
 {
     cspacepath_t vm_frame, vmm_frame;
     vspace_t *vm_vspace, *vmm_vspace;
-    void* vm_addr, *vmm_addr, *prev_vmm;
+    void* vm_addr, *vmm_addr, *first_vmm = NULL;
     reservation_t res;
     vka_object_t frame;
     vka_t* vka;
@@ -275,15 +275,22 @@ map_emulated_device(vm_t* vm, struct device *d)
     vmm_vspace = vm->vmm_vspace;
 
     /* Ensure that the inputted size is at least one page and page aligned  */
-    assert(size >= 0x1000);
+    assert(size >= BIT(seL4_PageBits));
     assert((size & (BIT(seL4_PageBits)-1)) == 0);
 
     unsigned int num_pages = size / BIT(seL4_PageBits);
 
+    /* Reserve the Entire Range of the Emulated Device */
+    res = vspace_reserve_range_at(vm_vspace, vm_addr, size, seL4_NoRights, 0);
+    assert(res.res);
+    if (!res.res) {
+        return NULL;
+    }
+
     for (int i = 0; i < num_pages; i++) {
 
         /* Create a frame (and a copy for the VMM) */
-        err = vka_alloc_frame(vka, 12, &frame);
+        err = vka_alloc_frame(vka, seL4_PageBits, &frame);
         assert(!err);
         if (err) {
             return NULL;
@@ -305,17 +312,8 @@ map_emulated_device(vm_t* vm, struct device *d)
 
         /* Map the frame to the VM */
         DMAP("Mapping emulated device ipa0x%x\n", (uint32_t)vm_addr);
-        res = vspace_reserve_range_at(vm_vspace, vm_addr, BIT(seL4_PageBits), seL4_NoRights, 0);
-        assert(res.res);
-        if (!res.res) {
-            vka_cspace_free(vka, vm_frame.capPtr);
-            vka_cspace_free(vka, vmm_frame.capPtr);
-            vka_free_object(vka, &frame);
-            return NULL;
-        }
         err = vspace_map_pages_at_vaddr(vm_vspace, &vm_frame.capPtr, NULL, vm_addr,
                                         1, seL4_PageBits, res);
-        vspace_free_reservation(vm_vspace, res);
         assert(!err);
         if (err) {
             printf("Failed to provide memory\n");
@@ -324,7 +322,7 @@ map_emulated_device(vm_t* vm, struct device *d)
             vka_free_object(vka, &frame);
             return NULL;
         }
-        prev_vmm = vmm_addr;
+
         vmm_addr = vspace_map_pages(vmm_vspace, &vmm_frame.capPtr, NULL, seL4_AllRights,
                                     1, seL4_PageBits, 0);
         assert(vmm_addr);
@@ -332,15 +330,15 @@ map_emulated_device(vm_t* vm, struct device *d)
             return NULL;
         }
 
-        if (i > 0) {
-            assert(vmm_addr == (prev_vmm + BIT(seL4_PageBits)));
+        if (first_vmm == NULL) {
+            first_vmm = vmm_addr;
         }
+
         vm_addr += BIT(seL4_PageBits);
     }
-    assert(vmm_addr);
+    vspace_free_reservation(vm_vspace, res);
 
-    /* We make the assumption that the pages are parallel in memory */
-    return vmm_addr - (BIT(seL4_PageBits) * --num_pages);
+    return first_vmm;
 }
 
 
