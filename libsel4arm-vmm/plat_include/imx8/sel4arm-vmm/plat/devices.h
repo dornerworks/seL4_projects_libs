@@ -18,6 +18,7 @@
 #define MAX_VIRQS          512
 
 #define dev_vconsole       dev_uart0
+#define dev_vconsole_dma   dev_uart0_dma
 #define INTERRUPT_VCONSOLE INTERRUPT_UART0_MOD
 #define VCONSOLE_ID        0
 

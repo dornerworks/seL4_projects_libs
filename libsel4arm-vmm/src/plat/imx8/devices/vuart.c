@@ -42,6 +42,7 @@ typedef volatile struct imx8_uart_regs imx8_uart_regs_t;
 
 struct vuart_priv {
     void* regs;
+    void* dma;
     char buffer[VUART_BUFLEN];
     virq_handle_t virq;
     int buf_pos;
@@ -420,6 +421,12 @@ handle_vuart_fault(struct device* d, vm_t* vm, fault_t* fault)
     return -1;
 }
 
+static int
+handle_vuart_dma_fault(struct device* d, vm_t* vm, fault_t* fault)
+{
+    return advance_fault(fault);
+}
+
 const struct device dev_uart0 = {
     .devid = DEV_UART0,
     .attr = DEV_ATTR_EMU,
@@ -430,14 +437,26 @@ const struct device dev_uart0 = {
     .priv = NULL
 };
 
+const struct device dev_uart0_dma = {
+    .devid = DEV_CUSTOM,
+    .attr = DEV_ATTR_EMU,
+    .name = "uart0_dma",
+    .pstart = UART0_DMA_PADDR,
+    .size = 0x10000,
+    .handle_page_fault = &handle_vuart_dma_fault,
+    .priv = NULL
+};
+
 int vm_install_vconsole(vm_t* vm, int virq)
 {
     int err;
     struct vuart_priv *vuart_data;
     vuart_node_t* vuart_node;
     struct device d;
+    struct device dma;
 
     d = dev_vconsole;
+    dma = dev_vconsole_dma;
 
     /* Initialise the virtual device */
     vuart_data = malloc(sizeof(struct vuart_priv));
@@ -458,6 +477,13 @@ int vm_install_vconsole(vm_t* vm, int virq)
 
     d.priv = vuart_data;
 
+    vuart_data->dma = map_emulated_device(vm, &dma);
+    assert(vuart_data->dma);
+    if (NULL == vuart_data->dma) {
+        free(vuart_data);
+        return -1;
+    }
+
     vuart_node = create_vuart_node(vuart_data);
     assert(NULL != vuart_node);
     if (NULL == vuart_node) {
@@ -475,6 +501,13 @@ int vm_install_vconsole(vm_t* vm, int virq)
     }
 
     err = vm_add_device(vm, &d);
+    assert(!err);
+    if (err) {
+        vuart_destroy(vm);
+        return -1;
+    }
+
+    err = vm_add_device(vm, &dma);
     assert(!err);
     if (err) {
         vuart_destroy(vm);
