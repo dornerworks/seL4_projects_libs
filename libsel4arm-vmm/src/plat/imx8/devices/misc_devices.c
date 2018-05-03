@@ -13,7 +13,7 @@
 
 const struct device dev_mu = {
     .devid = DEV_CUSTOM,
-    .attr = DEV_ATTR_NONE,
+    .attr = DEV_ATTR_MULTI_MAP,
     .name = "mu",
     .pstart = MU_PADDR,
     .size = 0x1000,
