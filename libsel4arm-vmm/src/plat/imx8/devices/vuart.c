@@ -20,75 +20,21 @@
 
 #define VUART_BUFLEN 256
 
-#define CR         0x00 /* Control Register */
-#define MR         0x04 /* Mode Register */
-#define IER        0x08 /* Interrupt Enable Register */
-#define IDR        0x0C /* Interrupt Disable Register */
-#define IMR        0x10 /* Interrupt Mask Register */
-#define ISR        0x14 /* Channel Interrupt Status Register */
-#define BAUDGEN    0x18 /* Baud Rate Generator Register */
-#define RXTOUT     0x1C /* Receiver Timeout Register */
-#define RXWM       0x20 /* Receiver FIFO Trigger Level Register */
-#define MODEMCR    0x24 /* Modem Control Register */
-#define MODEMSR    0x28 /* Modem Status Register */
-#define SR         0x2C /* Channel Status Register */
-#define FIFO       0x30 /* Transmit and Receive FIFO */
-#define BAUDDIV    0x34 /* Baud Rate Divider Register */
-#define FLOWDEL    0x38 /* Flow Control Delay Register */
-#define PAD1       0x3C
-#define PAD2       0x40
-#define TXWM       0x44 /* Transmitter FIFO Trigger Level Register */
-#define UART_SIZE  0x48
+#define VERID      0x00
+#define PARAM      0x04
+#define GLOBAL     0x08
+#define PINCFG     0x0C
+#define BAUD       0x10
+#define STAT       0x14
+#define CTRL       0x18
+#define DATA       0x1C
+#define MATCH      0x20
+#define FIFO       0x28
+#define WATER      0x2C
+#define UART_SIZE  0x30
 
-struct zynq_uart_regs {
-    uint32_t cr;            /* 0x00 Control Register */
-    uint32_t mr;            /* 0x04 Mode Register */
-    uint32_t ier;           /* 0x08 Interrupt Enable Register */
-    uint32_t idr;           /* 0x0C Interrupt Disable Register */
-    uint32_t imr;           /* 0x10 Interrupt Mask Register */
-    uint32_t isr;           /* 0x14 Channel Interrupt Status Register */
-    uint32_t baudgen;       /* 0x18 Baud Rate Generator Register */
-    uint32_t rxtout;        /* 0x1C Receiver Timeout Register */
-    uint32_t rxwm;          /* 0x20 Receiver FIFO Trigger Level Register */
-    uint32_t modemcr;       /* 0x24 Modem Control Register */
-    uint32_t modemsr;       /* 0x28 Modem Status Register */
-    uint32_t sr;            /* 0x2C Channel Status Register */
-    uint32_t fifo;          /* 0x30 Transmit and Receive FIFO */
-    uint32_t bauddiv;       /* 0x34 Baud Rate Divider Register */
-    uint32_t flowdel;       /* 0x38 Flow Control Delay Register */
-    uint32_t pad[2];
-    uint32_t txwm;          /* 0x44 Transmitter FIFO Trigger Level Register */
-};
-typedef volatile struct zynq_uart_regs zynq_uart_regs_t;
+typedef volatile struct imx8_uart_regs imx8_uart_regs_t;
 
-#define UART_SR_RTRIG           BIT( 0)
-#define UART_SR_REMPTY          BIT( 1)
-#define UART_SR_RFUL            BIT( 2)
-#define UART_SR_TEMPTY          BIT( 3)
-#define UART_SR_TFUL            BIT( 4)
-#define UART_SR_RACTIVE         BIT(10)
-#define UART_SR_TACTIVE         BIT(11)
-#define UART_SR_FDELT           BIT(12)
-#define UART_SR_TTRIG           BIT(13)
-#define UART_SR_TNFUL           BIT(14)
-
-#define UART_ISR_RTRIG          BIT( 0)
-#define UART_ISR_REMPTY         BIT( 1)
-#define UART_ISR_RFUL           BIT( 2)
-#define UART_ISR_TEMPTY         BIT( 3)
-#define UART_ISR_TFUL           BIT( 4)
-#define UART_ISR_ROVR           BIT( 5)
-#define UART_ISR_FRAME          BIT( 6)
-#define UART_ISR_PARE           BIT( 7)
-#define UART_ISR_TIMEOUT        BIT( 8)
-#define UART_ISR_DMSI           BIT( 9)
-#define UART_ISR_TTRIG          BIT(10)
-#define UART_ISR_TNFUL          BIT(11)
-#define UART_ISR_TOVR           BIT(12)
-#define UART_ISR_MASK           (BIT(13)-1)
-
-
-#define UART_CR_SELF_CLEARING_BITS  (0x43)
 #define CTRL_CHAR                   (29)
 
 #define COLOR_BUF_SZ      6
@@ -283,8 +229,8 @@ static void
 vuart_ack(void* token)
 {
     struct vuart_priv* vuart_data = token;
-    zynq_uart_regs_t* uart_regs = (zynq_uart_regs_t*)vuart_data->regs;
-    if (uart_regs->isr) {
+    imx8_uart_regs_t* uart_regs = (imx8_uart_regs_t*)vuart_data->regs;
+    if (uart_regs->stat & LPUART_STAT_RDRF) {
         /* Another IRQ occured */
         vm_inject_IRQ(vuart_data->virq);
     } else {
@@ -327,7 +273,7 @@ vuart_inject_irq(struct vuart_priv* vuart)
 void vuart_handle_irq(void)
 {
   int c;
-  zynq_uart_regs_t* uart_regs = (zynq_uart_regs_t*)vuarts_active_cursor->vuart_data->regs;
+  imx8_uart_regs_t* uart_regs = (imx8_uart_regs_t*)vuarts_active_cursor->vuart_data->regs;
 
   do
   {
@@ -342,7 +288,7 @@ void vuart_handle_irq(void)
        */
       ring_buf_put(&input_buffer_ring, '\n');
 
-      uart_regs = (zynq_uart_regs_t*)vuarts_active_cursor->vuart_data->regs;
+      uart_regs = (imx8_uart_regs_t*)vuarts_active_cursor->vuart_data->regs;
     }
     else if(c != -1)
     {
@@ -353,7 +299,9 @@ void vuart_handle_irq(void)
 
   if(!ring_buf_empty(&input_buffer_ring))
   {
-    uart_regs->isr |= UART_ISR_RTRIG;
+    uart_regs->stat |= LPUART_STAT_RDRF;
+    uart_regs->fifo &= ~FIFO_RXEMPT;
+    uart_regs->water |= WATERMARK_SET_RXCOUNT(1);
     vuart_inject_irq(vuarts_active_cursor->vuart_data);
   }
 
@@ -379,7 +327,7 @@ vuart_putchar(struct device* d, char c)
 {
     struct vuart_priv *vuart_data;
     assert(d->priv);
-    zynq_uart_regs_t* uart_regs = (zynq_uart_regs_t*)vuart_priv_get_regs(d);
+    imx8_uart_regs_t* uart_regs = (imx8_uart_regs_t*)vuarts_active_cursor->vuart_data->regs;
     vuart_data = (struct vuart_priv*)d->priv;
 
     if (vuart_data->buf_pos == VUART_BUFLEN) {
@@ -395,9 +343,9 @@ vuart_putchar(struct device* d, char c)
      */
     flush_vconsole_device(d);
 
-    if(uart_regs->imr & UART_ISR_TEMPTY)
+    if(uart_regs->stat & ~LPUART_STAT_TDRE)
     {
-      uart_regs->isr |= UART_ISR_TEMPTY;
+        uart_regs->stat |= LPUART_STAT_TDRE | LPUART_STAT_TC;
     }
 
     vuart_inject_irq(vuart_data);
@@ -411,9 +359,10 @@ handle_vuart_fault(struct device* d, vm_t* vm, fault_t* fault)
     uint32_t mask;
     UNUSED uint32_t v;
     UNUSED int data;
-    zynq_uart_regs_t* uart_regs;
 
-    uart_regs = (zynq_uart_regs_t*)vuart_priv_get_regs(d);
+    imx8_uart_regs_t* uart_regs;
+
+    uart_regs = (imx8_uart_regs_t*)vuart_priv_get_regs(d);
 
     /* Gather fault information */
     offset = fault_get_address(fault) - d->pstart;
@@ -428,32 +377,22 @@ handle_vuart_fault(struct device* d, vm_t* vm, fault_t* fault)
         return ignore_fault(fault);
     } else if (fault_is_read(fault)) {
         switch(offset) {
-          case SR:
-            data = 0;
+        case DATA:
+            if(vm->vmid == vuarts_active_cursor->vuart_data->vm->vmid) {
+                if(!ring_buf_empty(&input_buffer_ring))
+                {
+                    ring_buf_get(&input_buffer_ring, (char *)&data);
+                    fault_set_data(fault, data);
+                }
+            }
             if(ring_buf_empty(&input_buffer_ring))
             {
-              data |= UART_SR_REMPTY;
-            }
-            data |= UART_SR_TEMPTY;
-            fault_set_data(fault, data);
-            return advance_fault(fault);
-          case ISR:
-            fault_set_data(fault, uart_regs->isr);
-            return advance_fault(fault);
-          case FIFO:
-            if(vm->vmid == vuarts_active_cursor->vuart_data->vm->vmid) {
-              if(!ring_buf_empty(&input_buffer_ring))
-              {
-                ring_buf_get(&input_buffer_ring, (char *)&data);
-                fault_set_data(fault, data);
-              }
-              if(ring_buf_empty(&input_buffer_ring))
-              {
-                uart_regs->isr &= ~UART_ISR_RTRIG;
-              }
+                uart_regs->fifo |= FIFO_RXEMPT;
+                uart_regs->stat &= ~LPUART_STAT_RDRF;
+                uart_regs->water &= ~WATERMARK_SET_RXCOUNT(1);
             }
             return advance_fault(fault);
-          default:
+        default:
             /* Blindly read out data */
             fault_set_data(fault, *reg);
         }
@@ -461,53 +400,20 @@ handle_vuart_fault(struct device* d, vm_t* vm, fault_t* fault)
 
     } else { /* if(fault_is_write(fault))*/
         switch(offset) {
-        case IER:
-          /* Set bits get set in Interrupt Mask */
-          v = (fault_get_data(fault) & mask);
-          uart_regs->imr |= v;
-          return advance_fault(fault);
-        case IDR:
-          /* Set bits get cleared in Interrupt Mask */
-          v = ~(fault_get_data(fault) & mask);
-          uart_regs->imr &= v;
-          return advance_fault(fault);
-        case ISR:
-          /* Only clear set bits */
-          v = uart_regs->isr & ~mask;
-          v &= ~(fault_get_data(fault) & mask);
-          uart_regs->isr = v;
-          return advance_fault(fault);
-        case BAUDGEN:
-        case RXTOUT:
-        case RXWM:
-        case MODEMCR:
-        case MODEMSR:
-        case BAUDDIV:
-        case FLOWDEL:
-        case MR:
-        case TXWM:
-          /* Blindly write to the device */
-          v = *reg & ~mask;
-          v |= fault_get_data(fault) & mask;
-          *reg = v;
-          return advance_fault(fault);
-        case FIFO:
-          /* Write character to the uart for the active VM */
-          if(vm->vmid == vuarts_active_cursor->vuart_data->vm->vmid) {
-            vuart_putchar(d, fault_get_data(fault));
-          }
-          return advance_fault(fault);
-        case CR:
-          v = *reg & ~mask;
-          v |= fault_get_data(fault) & mask;
-          /* Always make sure self clearing bits are cleared
-           * since we don't actually let the VM control the UART
-           */
-          v &= ~(UART_CR_SELF_CLEARING_BITS);
-          *reg = v;
-          return advance_fault(fault);
+        case STAT:
+            return advance_fault(fault);
+        case DATA:
+            /* Write character to the uart for the active VM */
+            if(vm->vmid == vuarts_active_cursor->vuart_data->vm->vmid) {
+                vuart_putchar(d, fault_get_data(fault));
+            }
+            return advance_fault(fault);
         default:
-          return ignore_fault(fault);
+            /* Blindly write to the device */
+            v = *reg & ~mask;
+            v |= fault_get_data(fault) & mask;
+            *reg = v;
+            return advance_fault(fault);
         }
     }
     abandon_fault(fault);
