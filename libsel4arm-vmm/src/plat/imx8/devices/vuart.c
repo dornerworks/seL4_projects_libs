@@ -259,31 +259,23 @@ struct ps_chardevice* vuart_init(struct ps_io_ops* io_ops)
 
 static void vuart_data_reset(struct device* d)
 {
-  void* uart_regs = vuart_priv_get_regs(d);
+    void* uart_regs = vuart_priv_get_regs(d);
 
-  /* Default UART registers as defined in the ZUS+ TRM. Since
-   * we are emulating the device, we want the VM to see the
-   * registers with the values it would expect on reset.
-   */
-  const uint32_t reset_data[] = { 0x00000128,
-                                  0x00000000,
-                                  0x00000000,
-                                  0x00000000,
-                                  0x00000000,
-                                  0x00000200,
-                                  0x0000028B,
-                                  0x00000000,
-                                  0x00000020,
-                                  0x00000000,
-                                  0x00000000,
-                                  0x00000000,
-                                  0x00000000,
-                                  0x0000000F,
-                                  0x00000000,
-                                  0x00000000,
-                                  0x00000000,
-                                  0x00000020};
-  memcpy(uart_regs, reset_data, sizeof(reset_data));
+    /* Reset Data gathered from iMX8 TRM - 15.4.3.1.1 */
+    const uint32_t reset_data[] = { 0x04010001,  /* verid */
+                                    0x00000606,  /* param */
+                                    0x00000000,  /* global */
+                                    0x00000000,  /* pincfg */
+                                    0x0f000004,  /* baud */
+                                    0x00c00000,  /* stat */
+                                    0x00000000,  /* ctrl */
+                                    0x00001000,  /* data */
+                                    0x00000000,  /* match */
+                                    0x00000000,  /* res0 */
+                                    0x00c00055,  /* fifo */
+                                    0x00000000}; /* water */
+
+    memcpy(uart_regs, reset_data, sizeof(reset_data));
 }
 
 /* Called by the VM to ACK a virtual IRQ */
