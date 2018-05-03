@@ -17,9 +17,21 @@
 #define GIC_REDIST_PADDR   0x51B00000
 #define MAX_VIRQS          512
 
+#define dev_vconsole       dev_uart0
+#define INTERRUPT_VCONSOLE INTERRUPT_UART0_MOD
+#define VCONSOLE_ID        0
+
 /* Devices that the VM Needs */
 extern const struct device dev_vram;
 
 extern const struct device dev_uart0;
 extern const struct device dev_mu;
 extern const struct device dev_uart0_dma;
+
+typedef struct vuart_priv vuart_device_t;
+
+int vm_install_vconsole(vm_t* vm, int virq);
+int vm_uninstall_vconsole(vm_t* vm);
+struct ps_chardevice* vuart_init(struct ps_io_ops* io_ops);
+
+void vuart_handle_irq(void);
