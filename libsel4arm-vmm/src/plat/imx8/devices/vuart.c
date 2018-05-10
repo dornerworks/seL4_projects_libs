@@ -298,7 +298,7 @@ void vuart_handle_irq(void)
     }
   } while(c != -1);
 
-  if(!ring_buf_empty(&input_buffer_ring))
+  if(!ring_buf_empty(&input_buffer_ring) && (uart_regs->ctrl & LPUART_CTRL_RIE))
   {
     uart_regs->stat |= LPUART_STAT_RDRF;
     uart_regs->fifo &= ~FIFO_RXEMPT;
