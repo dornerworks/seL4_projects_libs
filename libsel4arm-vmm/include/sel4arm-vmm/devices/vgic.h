@@ -15,5 +15,6 @@
 #include <sel4arm-vmm/vm.h>
 
 int vm_install_vgic(vm_t* vm);
+int vm_reset_vgic(vm_t* vm);
 
 #endif /* SEL4ARM_VMM_DEVICES_VGIC_H */
