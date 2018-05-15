@@ -74,6 +74,9 @@ struct vm {
 
     /* Other */
     void *entry_point;
+    uint64_t dtb_addr;
+    uint32_t mach_type;
+    char *linux_name;
     /* Fault structure */
     fault_t *fault;
 
@@ -189,6 +192,13 @@ int vm_start(vm_t* vm);
  * @return       0 on success
  */
 int vm_stop(vm_t* vm);
+
+/**
+ * Restart a VM. The VM reverts back to initial boot sequence.
+ * @param[in] vm The virtual machine to restart
+ * @return       0 on success
+ */
+int vm_restart(vm_t* vm);
 
 /**
  * Handle a VM event

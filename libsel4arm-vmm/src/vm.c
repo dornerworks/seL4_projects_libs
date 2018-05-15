@@ -20,6 +20,8 @@
 #include <string.h>
 #include <sel4utils/mapping.h>
 
+#include <sel4arm-vmm/devices/vgic.h>
+
 #include <sel4/sel4.h>
 #include <sel4/messages.h>
 
@@ -294,6 +296,7 @@ vm_set_bootargs(vm_t* vm, void* pc, uint32_t mach_type, seL4_Word atags)
     regs.pc = (seL4_Word)pc;
     regs.cpsr = MODE_SUPERVISOR;
 #endif
+    vm->mach_type = mach_type;
     err = seL4_TCB_WriteRegisters(tcb, false, 0, sizeof(regs) / sizeof(regs.pc), &regs);
     assert(!err);
     return err;
@@ -311,6 +314,49 @@ vm_stop(vm_t* vm)
     return seL4_TCB_Suspend(vm_get_tcb(vm));
 }
 
+int
+vm_restart(vm_t* vm)
+{
+    int err;
+
+    /* Reset vgic */
+    err = vm_reset_vgic(vm);
+    if (err) {
+        printf("Error: Failed to reset vgic\n");
+        return -1;
+    }
+
+    /* Clear all TCB registers before setting boot args */
+    seL4_UserContext regs = {0};
+    err = seL4_TCB_WriteRegisters(vm_get_tcb(vm), false, 0, sizeof(regs) / sizeof(regs.pc), &regs);
+    if (err) {
+        printf("Error: Failed to clear TCB regs\n");
+        return -1;
+    }
+
+    /* Set boot arguments */
+    err = vm_set_bootargs(vm, vm->entry_point, vm->mach_type, vm->dtb_addr);
+    if (err) {
+        printf("Error: Failed to set boot arguments\n");
+        return -1;
+    }
+
+    /* Create new VCPU to obtain initial VCPU state */
+    vka_free_object(vm->vka, &vm->vcpu);
+    err = vka_alloc_vcpu(vm->vka, &vm->vcpu);
+    assert(!err);
+    err = seL4_ARM_VCPU_SetTCB(vm_get_vcpu(vm), vm_get_tcb(vm));
+    assert(!err);
+
+    /* Restart VM */
+    err = vm_start(vm);
+    if (err) {
+      printf("Failed to restart VM\n");
+      return -1;
+    }
+
+    return 0;
+}
 
 static void
 sys_pa_to_ipa(vm_t* vm, seL4_UserContext* regs)
