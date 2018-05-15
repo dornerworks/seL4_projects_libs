@@ -1142,6 +1142,41 @@ vm_install_vgic(vm_t* vm)
     return 0;
 }
 
+int
+vm_reset_vgic(vm_t* vm)
+{
+    struct vgic* vgic;
+    struct device dist, rdist, sgi;
+    struct device* vgic_device;
+
+    vgic_device = vm_find_device_by_id(vm, DEV_VGIC_DIST);
+    assert(vgic_device);
+    vgic = vgic_device_get_vgic(vgic_device);
+    assert(vgic);
+
+    vgic->lr_overflow = NULL;
+
+    /* Distributor */
+    dist = dev_vgic_dist;
+
+    dist.priv = (void*)vgic;
+    vgic_dist_reset(&dist);
+
+    /* Redistributor */
+    rdist = dev_vgic_redist;
+    rdist.priv = (void*)vgic;
+
+    vgic_rdist_reset(&rdist);
+
+    /* Redistributor SGI */
+    sgi = dev_vgic_redist_sgi;
+    sgi.priv = (void*)vgic;
+
+    vgic_rdist_sgi_reset(&sgi);
+
+    return 0;
+}
+
 const struct device dev_vgic_dist = {
     .devid = DEV_VGIC_DIST,
     .attr = DEV_ATTR_EMU,
