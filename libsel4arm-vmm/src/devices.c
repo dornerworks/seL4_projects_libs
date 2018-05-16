@@ -17,6 +17,8 @@
 #include <sel4arm-vmm/devices.h>
 #include <sel4arm-vmm/plat/devices.h>
 
+#include <sel4arm-vmm/guest_vspace.h>
+
 #include <sel4arm-vmm/fault.h>
 #include <vka/capops.h>
 
@@ -536,6 +538,67 @@ vm_install_ram_only_device(vm_t *vm, const struct device* device) {
     assert(!err);
     return err;
 }
+
+#ifdef CONFIG_ARM_SMMU_V2
+static
+seL4_CPtr get_iospace(vka_t *vka, uint16_t streamID)
+{
+    cspacepath_t mpath, iopath;
+    seL4_CPtr iocap;
+
+    seL4_CPtr mcap = seL4_CapIOSpace;
+    int err = vka_cspace_alloc(vka, &iocap);
+
+    if (err != 0) {
+        return seL4_CapNull;
+    }
+
+    vka_cspace_make_path(vka, iocap, &iopath);
+    vka_cspace_make_path(vka, mcap, &mpath);
+
+    err = vka_cnode_mint(&iopath, &mpath,
+                         seL4_AllRights, streamID);
+    if (err) {
+       vka_cnode_delete(&iopath);
+       return seL4_CapNull;
+    }
+
+    return iocap;
+}
+
+int
+vm_create_passthrough_iospace(vm_t* vm, const struct device* device)
+{
+    int err = 0;
+
+    /*
+       The add iospace calls have to happen before any mapping operations.
+       The first mapping operation is right below, so do not think about
+       moving this code section.
+    */
+
+    if (device->sid != 0) {
+        seL4_CPtr iocap = get_iospace(vm->vka, device->sid);
+
+        DMAP("Registering %s with stream id of 0x%x.\n",
+             device->name, device->sid);
+
+        if (seL4_CapNull == iocap) {
+            ZF_LOGF("Failed to get IOspace cap:  0x%x.\n", device->sid);
+            err = -1;
+        }
+        else {
+            err = vmm_guest_vspace_add_iospace(vm->vmm_vspace, vm_get_vspace(vm), iocap);
+            if (err) {
+                ZF_LOGF("Failed to add IOspace:  0x%x.\n", device->sid);
+            }
+        }
+    }
+    assert(!err);
+
+    return err;
+}
+#endif
 
 int
 vm_install_passthrough_device(vm_t* vm, const struct device* device)

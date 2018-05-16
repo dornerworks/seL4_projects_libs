@@ -94,6 +94,14 @@ struct gpio_device;
 struct clock_device;
 
 /**
+ * Create an IOSpace for a VM passthrough device
+ * @param[in] vm     A handle to the VM that the device should be install to
+ * @param[in] device A description of the device
+ * @return           0 on success
+ */
+int vm_create_passthrough_iospace(vm_t* vm, const struct device* device);
+
+/**
  * Install a passthrough device into a VM
  * @param[in] vm     A handle to the VM that the device should be install to
  * @param[in] device A description of the device
