@@ -19,6 +19,10 @@
 #define UART0_PADDR     0x5A060000
 #define UART0_DMA_PADDR 0x5A460000
 
+/* Ethernet */
+#define ENET1_PADDR      0x5B040000
+#define LPCG_ENET1_PADDR 0x5B230000
+
 /* Other Devices */
 #define MU_PADDR0       0x5D1B0000
 #define MU_PADDR1       0x5D1C0000

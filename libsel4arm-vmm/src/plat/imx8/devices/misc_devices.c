@@ -11,6 +11,27 @@
 #include <sel4arm-vmm/plat/device_map.h>
 #include <sel4arm-vmm/devices.h>
 
+const struct device dev_enet1 = {
+    .devid = DEV_CUSTOM,
+    .attr = DEV_ATTR_NONE,
+    .name = "gem3",
+    .pstart = ENET1_PADDR,
+    .size = 0x10000,
+    .sid = 0x12,
+    .handle_page_fault = NULL,
+    .priv = NULL
+};
+
+const struct device dev_lpcg_enet1 = {
+    .devid = DEV_CUSTOM,
+    .attr = DEV_ATTR_NONE,
+    .name = "lpcg_gem3",
+    .pstart = LPCG_ENET1_PADDR,
+    .size = 0x10000,
+    .handle_page_fault = NULL,
+    .priv = NULL
+};
+
 const struct device dev_mu0 = {
     .devid = DEV_CUSTOM,
     .attr = DEV_ATTR_NONE,

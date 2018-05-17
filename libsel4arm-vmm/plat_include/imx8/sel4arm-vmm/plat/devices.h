@@ -32,6 +32,9 @@ extern const struct device dev_mu2;
 extern const struct device dev_mu3;
 extern const struct device dev_uart0_dma;
 
+extern const struct device dev_enet1;
+extern const struct device dev_lpcg_enet1;
+
 typedef struct vuart_priv vuart_device_t;
 
 int vm_install_vconsole(vm_t* vm, int virq);
