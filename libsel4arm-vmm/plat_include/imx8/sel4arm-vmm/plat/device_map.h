@@ -11,9 +11,8 @@
 #pragma once
 
 /***** Physical Map ****/
-#define RAM_BASE  0x970000000
-#define RAM_END   0x980000000
-#define RAM_SIZE (RAM_END - RAM_BASE)
+#define RAM_BASE 0x970000000
+#define RAM_SIZE 0x10000000
 
 /* UART */
 #define UART0_PADDR     0x5A060000

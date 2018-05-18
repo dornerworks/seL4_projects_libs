@@ -12,8 +12,7 @@
 
 /***** Physical Map ****/
 #define RAM_BASE  0x800000000
-#define RAM_END   0x810000000
-#define RAM_SIZE (RAM_END - RAM_BASE)
+#define RAM_SIZE  0x10000000
 
 /* UART */
 #define UART0_PADDR           0xFF000000
