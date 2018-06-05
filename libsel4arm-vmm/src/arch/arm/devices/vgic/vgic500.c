@@ -74,7 +74,7 @@
 #define GIC_500_GRP1_S   (1 << 2)
 #define GIC_500_ARE_S    (1 << 4)
 
-#define GIC_500_ENABLED GIC_500_ARE_S | GIC_500_GRP1_NS | GIC_500_GRP0
+#define GIC_500_ENABLED (GIC_500_ARE_S | GIC_500_GRP1_NS | GIC_500_GRP0)
 
 #define GIC_SGI_OFFSET  0x10000
 
@@ -694,15 +694,6 @@ vgic_sgi_set_pending_irq(struct device* d, vm_t* vm, int irq)
     vm->unlock();
 #endif //CONCONFIG_LIB_SEL4_ARM_VMM_VCHAN_SUPPORT
 
-    return 0;
-}
-
-static int
-vgic_sgi_clr_pending_irq(struct device* d, vm_t* vm, int irq)
-{
-    struct gic_rdist_sgi_ppi_map* gic_sgi = vgic_priv_get_rdist_sgi(d);
-    DDIST("clr pending irq %d\n", irq);
-    sgi_set_pending(gic_sgi, irq, false);
     return 0;
 }
 

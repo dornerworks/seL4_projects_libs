@@ -179,8 +179,8 @@ handle_page_fault(vm_t* vm, fault_t* fault)
     } else {
         print_fault(fault);
         abandon_fault(fault);
-        return -1;
     }
+    return -1;
 }
 
 static int handle_exception(vm_t* vm, seL4_Word ip)
@@ -370,12 +370,14 @@ sys_pa_to_ipa(vm_t* vm, seL4_UserContext* regs)
 {
     uint32_t UNUSED pa;
 #ifdef CONFIG_ARCH_AARCH64
+    pa = regs->x0;
 #else
     pa = regs->r0;
 #endif
 
     DSTRACE("PA translation syscall from [%s]: 0x%08x->?\n", vm->name, pa);
 #ifdef CONFIG_ARCH_AARCH64
+    regs->x0 = pa;
 #else
     regs->r0 = pa;
 #endif
@@ -389,6 +391,7 @@ sys_ipa_to_pa(vm_t* vm, seL4_UserContext* regs)
     seL4_Word ipa;
     seL4_CPtr cap;
 #ifdef CONFIG_ARCH_AARCH64
+    ipa = regs->x0;
 #else
     ipa = regs->r0;
 #endif
@@ -409,6 +412,7 @@ sys_ipa_to_pa(vm_t* vm, seL4_UserContext* regs)
     DSTRACE("IPA translation syscall from [%s]: 0x%08x->0x%08x\n",
             vm->name, ipa, ret.paddr);
 #ifdef CONFIG_ARCH_AARCH64
+    regs->x0 = ret.paddr;
 #else
     regs->r0 = ret.paddr;
 #endif

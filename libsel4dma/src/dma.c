@@ -26,9 +26,11 @@
 #define dprintf(...) do{}while(0)
 #endif
 
-#if defined(PLAT_IMX6) || defined(IMX6)
+#if defined(PLAT_IMX6) || defined(IMX6) || defined(PLAT_IMX8)
 #define DMA_MINALIGN_BYTES 32
 #elif defined(PLAT_EXYNOS4)
+#define DMA_MINALIGN_BYTES 32
+#elif defined(PLAT_ZYNQMP)
 #define DMA_MINALIGN_BYTES 32
 #elif defined(PLAT_EXYNOS5)
 #define DMA_MINALIGN_BYTES 32
