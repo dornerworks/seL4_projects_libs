@@ -59,6 +59,8 @@
 #define MODE_EL1h       0x05
 #endif
 
+#define PSCI_SYS_OFF    0x84000008
+#define PSCI_SYS_RST    0x84000009
 
 #define CERROR    "\033[1;31m"
 #define CNORMAL   "\033[0m"
@@ -450,6 +452,40 @@ handle_syscall(vm_t* vm, seL4_Word length)
     return 0;
 }
 
+static int
+handle_PSCI(vm_t* vm)
+{
+    int err;
+    uint32_t function;
+
+    function = seL4_GetMR(seL4_PSCIFault_Function);
+
+    /* Handle PSCI functions. For SYSTEM_OFF and SYSTEM_RESET functions, restart
+     *  linux. For all other PSCI functions advance the program counter and
+     *  reply to the message. */
+    if (function == PSCI_SYS_OFF) {
+        return SHUTDOWN_VM;
+    } else if (function == PSCI_SYS_RST) {
+        return RESTART_VM;
+    } else {
+        seL4_UserContext regs;
+        seL4_CPtr tcb;
+        tcb = vm_get_tcb(vm);
+        err = seL4_TCB_ReadRegisters(tcb, false, 0, sizeof(regs) / sizeof(regs.pc), &regs);
+        assert(!err);
+        regs.pc += 4;
+
+        err = seL4_TCB_WriteRegisters(tcb, false, 0, sizeof(regs) / sizeof(regs.pc), &regs);
+        assert(!err);
+
+        seL4_MessageInfo_t reply;
+        reply = seL4_MessageInfo_new(0, 0, 0, 0);
+        seL4_Reply(reply);
+
+        return 0;
+    }
+}
+
 int
 vm_event(vm_t* vm, seL4_MessageInfo_t tag)
 {
@@ -544,6 +580,11 @@ vm_event(vm_t* vm, seL4_MessageInfo_t tag)
             printf("Unhandled VCPU fault from [%s]: HSR 0x%08x\n", vm->name, hsr);
             return -1;
         }
+    }
+    break;
+    case seL4_Fault_PSCIFault: {
+        assert(length == seL4_PSCIFault_Length);
+        return handle_PSCI(vm);
     }
     break;
     default:

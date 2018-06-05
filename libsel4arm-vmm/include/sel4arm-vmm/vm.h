@@ -32,6 +32,9 @@
 #define MAX_PASSTHROUGH_IRQS 256
 #define MAX_REBOOT_HOOKS_PER_VM 10
 
+#define RESTART_VM -2
+#define SHUTDOWN_VM -3
+
 typedef int (*reboot_hook_fn)(vm_t* vm, void *token);
 
 struct reboot_hooks {
