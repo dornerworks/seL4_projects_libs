@@ -672,7 +672,7 @@ handle_listening_fault(struct device* d, vm_t* vm,
     }
     printf(" ");
     fault_print_data(fault);
-    printf(" address 0x%08x @ pc 0x%08x\n", fault_get_address(fault),
+    printf(" address 0x%08x @ pc 0x"XFMT"\n", fault_get_address(fault),
            fault_get_ctx(fault)->pc);
     return advance_fault(fault);
 }
@@ -717,10 +717,10 @@ handle_listening_ram_fault(struct device* d, vm_t* vm, fault_t* fault)
 
     if (fault_is_read(fault)) {
         fault_set_data(fault, *reg);
-        printf("Listener pc0x%x| r0x%x:0x%x\n", fault_get_ctx(fault)->pc,
+        printf("Listener pc0x"XFMT"| r0x%x:0x%x\n", fault_get_ctx(fault)->pc,
                fault_get_address(fault), fault_get_data(fault));
     } else {
-        printf("Listener pc0x%x| w0x%x:0x%x\n", fault_get_ctx(fault)->pc,
+        printf("Listener pc0x"XFMT"| w0x%x:0x%x\n", fault_get_ctx(fault)->pc,
                fault_get_address(fault), fault_get_data(fault));
         *reg = fault_emulate(fault, *reg);
     }

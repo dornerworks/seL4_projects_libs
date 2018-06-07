@@ -57,7 +57,7 @@ handle_gac_fault(struct device* d, vm_t* vm, fault_t* fault)
             switch (gac_device_priv->action) {
             case VACDEV_REPORT_AND_MASK:
             case VACDEV_REPORT_ONLY:
-                printf("[ac/%s] pc 0x%08x | access violation: bits 0x%08x @ 0x%08x\n",
+                printf("[ac/%s] pc 0x"XFMT" | access violation: bits 0x%08x @ 0x%08x\n",
                        d->name, fault_get_ctx(fault)->pc, (result ^ *reg) & ~mask,
                        fault_get_address(fault));
             default:

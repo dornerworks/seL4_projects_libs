@@ -162,14 +162,14 @@ handle_page_fault(vm_t* vm, fault_t* fault)
         default:
             mapped = map_vm_device(vm, addr, addr, seL4_AllRights);
             if (mapped) {
-                DVM("WARNING: Blindly mapped device @ 0x%lx for PC 0x%lx\n",
+                DVM("WARNING: Blindly mapped device @ 0x"XFMT" for PC 0x"XFMT"\n",
                     fault_get_address(fault), fault_get_ctx(fault)->pc);
                 restart_fault(fault);
                 return 0;
             }
             mapped = map_vm_ram(vm, addr);
             if (mapped) {
-                DVM("WARNING: Mapped RAM for device @ 0x%lx for PC 0%lx\n",
+                DVM("WARNING: Mapped RAM for device @ 0x"XFMT" for PC 0"XFMT"\n",
                     fault_get_address(fault), fault_get_ctx(fault)->pc);
                 restart_fault(fault);
                 return 0;
@@ -463,7 +463,7 @@ handle_syscall(vm_t* vm, seL4_Word length)
 
         /* If there isn't a vchan device, just return */
         if(dev == NULL) {
-            printf("WARNING: Vchan %d does not exist. Returning\n", regs.x0);
+            printf("WARNING: Vchan %d does not exist. Returning\n", (int)regs.x0);
             /* We need to set the return length to 0 if the VM is reading from
              * the communication server's write buffer
              */
@@ -633,7 +633,7 @@ vm_event(vm_t* vm, seL4_MessageInfo_t tag)
     break;
     default:
         /* What? Why are we here? What just happened? */
-        printf("Unknown fault from [%s]: label=0x%x length=0x%x\n",
+        printf("Unknown fault from [%s]: label=0x"XFMT" length=0x"XFMT"\n",
                vm->name, label, length);
         return -1;
     }
