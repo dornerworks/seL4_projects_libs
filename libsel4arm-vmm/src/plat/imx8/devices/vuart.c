@@ -519,6 +519,7 @@ int vm_install_vconsole(vm_t* vm, int virq)
 
 int vm_uninstall_vconsole(vm_t* vm)
 {
+    next_active_uart();
     vuart_destroy(vm);
     return 0;
 }
