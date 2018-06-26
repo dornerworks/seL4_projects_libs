@@ -171,11 +171,17 @@ int vm_add_device(vm_t* vm, const struct device* d);
  * Add a vchan device to the VM without performind any initialisation of the device
  * When the VM receives a VM Syscall it will check to see if the assigned port
  * matches a registered vchan.
- * @param[in] vm     A handle to the VM that the device should be install to
  * @param[in] device A description of the device
- * @return           0 on success
+ * @return           0 on success, -1 on failure
  */
-int vm_add_vchan(vm_t* vm, const struct vchan_device* d);
+int add_vchan(struct vchan_device* d);
+
+/**
+ * Remove a vchan device from the VM.
+ * @param[in] device A description of the device
+ * @return           0 on success, -1 on failure
+ */
+int remove_vchan(struct vchan_device* d);
 
 /**
  * Map a given frame cap into a VM's IPA.

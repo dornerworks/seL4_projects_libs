@@ -29,7 +29,7 @@ const char* choose_colour(vm_t* vm);
 struct device* vm_find_device_by_id(vm_t* vm, enum devid id);
 struct device* vm_find_device_by_ipa(vm_t* vm, uintptr_t ipa);
 
-struct vchan_device* vm_find_vchan_by_port(vm_t* vm, int port);
+struct vchan_device* find_vchan_by_port(int port);
 
 static inline seL4_CPtr vm_get_tcb(vm_t* vm)
 {

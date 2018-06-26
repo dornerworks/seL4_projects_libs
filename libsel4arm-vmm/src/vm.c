@@ -110,6 +110,9 @@
 #define DVM(...) do{}while(0)
 #endif
 
+static struct vchan_device vchans[MAX_COMM_CHANNELS];
+static int nvchans;
+
 extern char _cpio_archive[];
 
 const char* choose_colour(vm_t* vm)
@@ -458,7 +461,7 @@ handle_syscall(vm_t* vm, seL4_Word length)
     case VM_WRITE_TOKEN:
         tag = seL4_MessageInfo_new(0, 0, 0, VCHAN_NUM_MSG);
 
-        dev = vm_find_vchan_by_port(vm, regs.x0);
+        dev = find_vchan_by_port(regs.x0);
         seL4_SetMR(VCHAN_EVENT, (syscall == VM_WRITE_TOKEN) ? VCHAN_WRITE : VCHAN_READ);
 
         /* If there isn't a vchan device, just return */
@@ -473,6 +476,18 @@ handle_syscall(vm_t* vm, seL4_Word length)
             break;
         }
 
+        if ((syscall == VM_READ_TOKEN) && (vm->vmid != dev->source.vmid))
+        {
+            printf("WARNING: Calling VM(%d) does not match vchan device\n", vm->vmid);
+            break;
+        }
+        if ((syscall == VM_WRITE_TOKEN) && (vm->vmid != dev->destination.vmid))
+        {
+            printf("WARNING: Calling VM(%d) does not match vchan device\n", vm->vmid);
+            regs.x2 = 0;
+            break;
+        }
+
         /* Signal the proper comm server with expected messages */
         seL4_SetMR(VCHAN_PORT, regs.x0);
         seL4_SetMR(VCHAN_CHECKSUM, regs.x1);
@@ -483,6 +498,12 @@ handle_syscall(vm_t* vm, seL4_Word length)
         /* The VM expects the message length and checksum to be returned */
         regs.x1 = seL4_GetMR(VCHAN_CHECKSUM_RET);
         regs.x2 = seL4_GetMR(VCHAN_LEN_RET);
+
+        /* Comm server is down. Remove vchan from active list. */
+        if (regs.x2 == VCHAN_LEN_SHUTDOWN && regs.x1 == VCHAN_CHECKSUM_SHUTDOWN) {
+            printf("WARNING: Communication Server %d has shut down\n", (int)regs.x0);
+            remove_vchan(dev);
+        }
 
         break;
 
@@ -720,15 +741,38 @@ vm_add_device(vm_t* vm, const struct device* d)
 }
 
 int
-vm_add_vchan(vm_t* vm, const struct vchan_device* d)
+add_vchan(struct vchan_device* d)
 {
     assert(d != NULL);
-    if (vm->nvchans < MAX_DEVICES_PER_VM) {
-        vm->vchans[vm->nvchans++] = *d;
+    if (nvchans < MAX_COMM_CHANNELS) {
+        vchans[nvchans++] = *d;
         return 0;
     } else {
         return -1;
     }
+}
+
+int
+remove_vchan(struct vchan_device* d)
+{
+    int pos = -1;
+
+    assert(d != NULL);
+    for (int i = 0; i < nvchans; i++) {
+        if (vchans[i].port == d->port) {
+            pos = i;
+            break;
+        }
+    }
+    /* If we found a vchan, we need to update the vchan list */
+    if (pos != -1) {
+        nvchans--;
+        for (int i = pos; i < nvchans; i++) {
+            vchans[i] = vchans[i + 1];
+        }
+        return 0;
+    }
+    return -1;
 }
 
 static int cmp_id(struct device* d, void* data)
@@ -764,10 +808,10 @@ vm_find_device_by_ipa(vm_t* vm, uintptr_t ipa) {
 }
 
 struct vchan_device*
-vm_find_vchan_by_port(vm_t* vm, int port) {
+find_vchan_by_port(int port) {
     struct vchan_device *ret;
     int i;
-    for (i = 0, ret = vm->vchans; i < vm->nvchans; i++, ret++) {
+    for (i = 0, ret = vchans; i < nvchans; i++, ret++) {
         if (ret->port == port) {
             return ret;
         }

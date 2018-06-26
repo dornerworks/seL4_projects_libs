@@ -28,3 +28,6 @@ enum vchan_return {
     VCHAN_CHECKSUM_RET,
     VCHAN_NUM_RET
 };
+
+#define VCHAN_LEN_SHUTDOWN      0xdead
+#define VCHAN_CHECKSUM_SHUTDOWN 0xbeef

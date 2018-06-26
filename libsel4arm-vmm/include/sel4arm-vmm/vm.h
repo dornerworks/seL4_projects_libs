@@ -84,9 +84,6 @@ struct vm {
     /* Fault structure */
     fault_t *fault;
 
-    struct vchan_device vchans[MAX_COMM_CHANNELS];
-    int nvchans;
-
 #ifdef CONFIG_LIB_SEL4_ARM_VMM_VCHAN_SUPPORT
     /* Installed vchan connections */
     camkes_vchan_con_t **vchan_cons;
