@@ -20,4 +20,7 @@
 #define UART0_DMA_PADDR 0x5A460000
 
 /* Other Devices */
-#define MU_PADDR        0x5D1B0000
+#define MU_PADDR0       0x5D1B0000
+#define MU_PADDR1       0x5D1C0000
+#define MU_PADDR2       0x5D1D0000
+#define MU_PADDR3       0x5D1E0000

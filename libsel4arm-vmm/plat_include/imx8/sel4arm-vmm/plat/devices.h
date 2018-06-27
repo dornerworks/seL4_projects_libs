@@ -26,7 +26,10 @@
 extern const struct device dev_vram;
 
 extern const struct device dev_uart0;
-extern const struct device dev_mu;
+extern const struct device dev_mu0;
+extern const struct device dev_mu1;
+extern const struct device dev_mu2;
+extern const struct device dev_mu3;
 extern const struct device dev_uart0_dma;
 
 typedef struct vuart_priv vuart_device_t;
