@@ -15,6 +15,11 @@ enum vchan_event {
     VCHAN_WRITE
 };
 
+enum vchan_status {
+    VCHAN_OFF,
+    VCHAN_ON
+};
+
 enum vchan_regs {
     VCHAN_PORT,
     VCHAN_EVENT,

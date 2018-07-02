@@ -61,6 +61,7 @@ typedef enum {
 
 struct vm_register {
     int vmid;
+    int registered;
 };
 
 /**
@@ -182,6 +183,22 @@ int add_vchan(struct vchan_device* d);
  * @return           0 on success, -1 on failure
  */
 int remove_vchan(struct vchan_device* d);
+
+/**
+ * Mark a vchan device as registered by its VM.
+ * @param[in] vm     A handle to the VM registering the device
+ * @param[in] d      A description of the device
+ * @param[in] dir    A description of the device direction
+ */
+void register_vchan(vm_t *vm, struct vchan_device* d, uint8_t dir);
+
+/**
+ * Mark a vchan device as unregistered by its VM.
+ * @param[in] vm     A handle to the VM registering the device
+ * @param[in] d      A description of the device
+ * @param[in] dir    A description of the device direction
+ */
+void unregister_vchan(vm_t *vm, struct vchan_device* d, uint8_t dir);
 
 /**
  * Map a given frame cap into a VM's IPA.

@@ -64,8 +64,9 @@
 #define PSCI_SYS_OFF    0x84000008
 #define PSCI_SYS_RST    0x84000009
 
-#define VM_WRITE_TOKEN 0xfabbdad
-#define VM_READ_TOKEN  0xfabbdab
+#define VM_WRITE_TOKEN     0xfabbdad
+#define VM_READ_TOKEN      0xfabbdab
+#define VM_REGISTER_TOKEN  0xfabbdac
 
 #define CERROR    "\033[1;31m"
 #define CNORMAL   "\033[0m"
@@ -457,6 +458,16 @@ handle_syscall(vm_t* vm, seL4_Word length)
     case 67:
         sys_nop(vm, &regs);
         break;
+    case VM_REGISTER_TOKEN:
+        if (regs.x2 == VCHAN_ON)
+        {
+            register_vchan(vm, find_vchan_by_port(regs.x0), regs.x1);
+        }
+        else
+        {
+            unregister_vchan(vm, find_vchan_by_port(regs.x0), regs.x1);
+        }
+        break;
     case VM_READ_TOKEN:
     case VM_WRITE_TOKEN:
         tag = seL4_MessageInfo_new(0, 0, 0, VCHAN_NUM_MSG);
@@ -485,6 +496,14 @@ handle_syscall(vm_t* vm, seL4_Word length)
         {
             printf("WARNING: Calling VM(%d) does not match vchan device\n", vm->vmid);
             regs.x2 = 0;
+            break;
+        }
+
+        if ((dev->source.registered != 1) || (dev->destination.registered != 1)) {
+            printf("WARNING: Vchan not registered by both VMs\n");
+            if (syscall == VM_WRITE_TOKEN) {
+                regs.x2 = 0;
+            }
             break;
         }
 
@@ -775,6 +794,35 @@ remove_vchan(struct vchan_device* d)
     return -1;
 }
 
+void
+register_vchan(vm_t *vm, struct vchan_device* d, uint8_t dir)
+{
+    assert(d != NULL);
+    if ((vm->vmid == d->source.vmid) && (dir == VCHAN_WRITE))
+    {
+        d->source.registered = 1;
+    }
+    if ((vm->vmid == d->destination.vmid) && (dir == VCHAN_READ))
+    {
+        d->destination.registered = 1;
+    }
+}
+
+void
+unregister_vchan(vm_t *vm, struct vchan_device* d, uint8_t dir)
+{
+    assert(d != NULL);
+    if ((vm->vmid == d->source.vmid) && (dir == VCHAN_WRITE))
+    {
+        d->source.registered = -1;
+    }
+    if ((vm->vmid == d->destination.vmid) && (dir == VCHAN_READ))
+    {
+        d->destination.registered = -1;
+    }
+}
+
+
 static int cmp_id(struct device* d, void* data)
 {
     return !(d->devid == *((enum devid*)data));
@@ -816,6 +864,7 @@ find_vchan_by_port(int port) {
             return ret;
         }
     }
+    printf("ERROR: Vchan %d does not exist\n", port);
     return NULL;
 }
 
