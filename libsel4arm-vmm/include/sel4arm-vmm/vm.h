@@ -81,6 +81,8 @@ struct vm {
     uint64_t dtb_addr;
     uint32_t mach_type;
     char *linux_name;
+    /* Map RAM 1:1. Warning, RAM needs to be a seL4 device */
+    int map_unity;
     /* Fault structure */
     fault_t *fault;
 
