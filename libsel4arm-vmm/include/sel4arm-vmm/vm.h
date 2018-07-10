@@ -75,6 +75,7 @@ struct vm {
     int nhooks;
 
     uintptr_t linux_base;
+    uintptr_t linux_size;
 
     /* Other */
     void *entry_point;
