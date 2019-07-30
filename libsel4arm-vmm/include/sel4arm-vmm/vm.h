@@ -92,6 +92,7 @@ typedef struct virq_handle *virq_handle_t;
  * Create a virtual machine
  * @param name           A logical name for the VM
  * @param priority       The priority of the new VM
+ * @param affinity       The affinity of the new VM. Should be the same as VMM
  * @param vmm_endpoint   An endpoint for IPC delivery such as VM faults
  * @param vm_badge       The badge for delivered IPCs
  * @param vka            A vka for object allocation.
@@ -106,7 +107,7 @@ typedef struct virq_handle *virq_handle_t;
  * @param vm             A reference to a vm struct to initialise
  * @return               0 on success
  */
-int vm_create(const char *name, int priority,
+int vm_create(const char *name, int priority, int affinity,
               seL4_CPtr vmm_endpoint, seL4_Word vm_badge,
               vka_t *vka, simple_t *simple, vspace_t *vspace,
               ps_io_ops_t *io_ops,

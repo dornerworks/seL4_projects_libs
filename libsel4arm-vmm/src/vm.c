@@ -130,7 +130,7 @@ static int handle_exception(vm_t *vm, seL4_Word ip)
     return 1;
 }
 
-int vm_create(const char *name, int priority,
+int vm_create(const char *name, int priority, int affinity,
               seL4_CPtr vmm_endpoint, seL4_Word vm_badge,
               vka_t *vka, simple_t *simple, vspace_t *vmm_vspace,
               ps_io_ops_t *io_ops,
@@ -196,6 +196,10 @@ int vm_create(const char *name, int priority,
                              vm->cspace.cptr, cspace_root_data,
                              vm->pd.cptr, null_cap_data, 0, seL4_CapNull);
     assert(!err);
+
+#if CONFIG_MAX_NUM_NODES > 1
+    err = seL4_TCB_SetAffinity(vm_get_tcb(vm), affinity);
+#endif
 
     err = seL4_TCB_SetSchedParams(vm_get_tcb(vm), simple_get_tcb(simple), priority - 1, priority - 1);
     assert(!err);
