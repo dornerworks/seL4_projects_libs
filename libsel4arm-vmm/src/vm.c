@@ -201,6 +201,8 @@ int vm_create(const char *name, int priority, int affinity,
     err = seL4_TCB_SetAffinity(vm_get_tcb(vm), affinity);
 #endif
 
+    NAME_THREAD(vm_get_tcb(vm), vm->name);
+
     err = seL4_TCB_SetSchedParams(vm_get_tcb(vm), simple_get_tcb(simple), priority - 1, priority - 1);
     assert(!err);
 
