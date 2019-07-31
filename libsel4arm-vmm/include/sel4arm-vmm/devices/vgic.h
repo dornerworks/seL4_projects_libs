@@ -13,4 +13,7 @@
 
 #include <sel4arm-vmm/vm.h>
 
+#define NUM_PPI 32
+#define IRQ_IS_PPI(irq) ((irq) < NUM_PPI)
+
 int vm_install_vgic(vm_t *vm);
