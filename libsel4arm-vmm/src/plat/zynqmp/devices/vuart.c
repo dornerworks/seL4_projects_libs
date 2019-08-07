@@ -122,7 +122,7 @@ static void vuart_data_reset(struct device* d)
                                     0x00000000,
                                     0x00000000,
                                     0x00000000,
-                                    0x00000200,
+                                    0x00000208,
                                     0x0000028B,
                                     0x00000000,
                                     0x00000020,
@@ -144,7 +144,7 @@ vuart_ack(void* token)
 {
     struct vuart_priv* vuart_data = token;
     zynq_uart_regs_t* uart_regs = (zynq_uart_regs_t*)vuart_data->regs;
-    if (uart_regs->isr) {
+    if (uart_regs->isr & uart_regs->imr) {
         /* Another IRQ occured */
         vm_inject_IRQ(vuart_data->virq);
     } else {
@@ -208,11 +208,6 @@ vuart_putchar(struct device* d, char c)
      * We could probably implement some SW timeout that flushes every so often if there is data available.
      */
     flush_vconsole_device(d);
-
-    if(uart_regs->imr & UART_ISR_TEMPTY)
-    {
-        uart_regs->isr |= UART_ISR_TEMPTY;
-    }
 
     vuart_inject_irq(vuart_data);
 }
@@ -287,6 +282,7 @@ handle_vuart_fault(struct device* d, vm_t* vm, fault_t* fault)
             /* Only clear set bits */
             v = uart_regs->isr & ~mask;
             v &= ~(fault_get_data(fault) & mask);
+            v |= UART_ISR_TEMPTY;
             uart_regs->isr = v;
             return advance_fault(fault);
         case BAUDGEN:
