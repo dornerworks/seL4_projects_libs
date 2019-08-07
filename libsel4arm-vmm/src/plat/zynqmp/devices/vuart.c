@@ -1,5 +1,5 @@
 /*
- * Copyright 2018, DornerWorks
+ * Copyright 2019, DornerWorks
  *
  * This software may be distributed and modified according to the terms of
  * the BSD 2-Clause license. Note that NO WARRANTY is provided.
@@ -15,8 +15,7 @@
 #include "../../../vm.h"
 #include "../../../devices.h"
 
-#include <sel4platsupport/serial.h>
-#include <platsupport/serial.h>
+#include <sel4arm-vmm/ringbuf.h>
 
 #define VUART_BUFLEN 256
 
@@ -87,9 +86,7 @@ typedef volatile struct zynq_uart_regs zynq_uart_regs_t;
 #define UART_ISR_TOVR           BIT(12)
 #define UART_ISR_MASK           (BIT(13)-1)
 
-
 #define UART_CR_SELF_CLEARING_BITS  (0x43)
-#define CTRL_CHAR                   (29)
 
 #define COLOR_BUF_SZ      6
 #define NAME_BUF_SZ       64
@@ -101,124 +98,10 @@ struct vuart_priv {
     int buf_pos;
     int int_pending;
     vm_t* vm;
+    print_func_t callback;
 };
 
-struct vuart_node {
-  struct vuart_priv* vuart_data;
-  struct vuart_node* next;
-};
-typedef struct vuart_node vuart_node_t;
-
-vuart_node_t* vuarts_active_cursor = NULL;
-
-vuart_node_t* create_vuart_node(struct vuart_priv* vuart_data)
-{
-  static vuart_node_t* vuarts_last;
-  vuart_node_t* new_node = (vuart_node_t*)malloc(sizeof(vuart_node_t));
-  if(new_node == NULL)
-  {
-    return NULL;
-  }
-  new_node->vuart_data = vuart_data;
-  if(NULL == vuarts_last)
-  {
-    new_node->next = new_node;
-    vuarts_active_cursor = new_node;
-    vuarts_last = new_node;
-  }
-
-  new_node->next = vuarts_last->next;
-  vuarts_last->next = new_node;
-  vuarts_last = new_node;
-
-  return new_node;
-}
-
-void vuart_destroy(vm_t *vm)
-{
-    vuart_node_t* vuarts_prev = NULL;
-    vuart_node_t* vuarts_curr;
-
-    for(vuarts_curr = vuarts_active_cursor; vuarts_curr != NULL;
-        vuarts_prev = vuarts_curr, vuarts_curr = vuarts_curr->next)
-    {
-        if(vuarts_curr->vuart_data->vm == vm)
-        {
-            if (vuarts_prev == NULL) {
-                vuarts_active_cursor = vuarts_curr->next;
-            }
-            else {
-                vuarts_prev->next = vuarts_curr->next;
-            }
-            free(vuarts_curr->vuart_data);
-            free(vuarts_curr);
-            return;
-        }
-    }
-}
-
-struct ps_chardevice char_dev;
-
-struct ring_buf {
-  char *buf;
-  size_t prod;
-  size_t cons;
-  size_t size;
-};
-typedef struct ring_buf ring_buf_t;
-
-int ring_buf_empty(ring_buf_t* rbuf)
-{
-    return (rbuf->prod == rbuf->cons);
-}
-
-int ring_buf_full(ring_buf_t* rbuf)
-{
-    return (((rbuf->prod + 1) % rbuf->size) == rbuf->cons);
-}
-
-int ring_buf_put(ring_buf_t* rbuf, char data)
-{
-    int err = -1;
-
-    if(rbuf)
-    {
-        rbuf->buf[rbuf->prod] = data;
-        rbuf->prod = (rbuf->prod + 1) % rbuf->size;
-
-        if(rbuf->prod == rbuf->cons)
-        {
-            rbuf->cons = (rbuf->cons + 1) % rbuf->size;
-        }
-
-        err = 0;
-    }
-
-    return err;
-}
-
-int ring_buf_get(ring_buf_t* rbuf, char *data)
-{
-    int err = -1;
-
-    if(rbuf && data && !ring_buf_empty(rbuf))
-    {
-        *data = rbuf->buf[rbuf->cons];
-        rbuf->cons = (rbuf->cons + 1) % rbuf->size;
-
-        err = 0;
-    }
-
-    return err;
-}
-
-void ring_buf_reset(ring_buf_t* rbuf)
-{
-  rbuf->prod = 0;
-  rbuf->cons = 0;
-  memset(rbuf->buf, 0, rbuf->size);
-}
-
+static struct vuart_priv *vuart_data;
 static ring_buf_t input_buffer_ring;
 
 static inline void* vuart_priv_get_regs(struct device* d)
@@ -226,64 +109,33 @@ static inline void* vuart_priv_get_regs(struct device* d)
     return ((struct vuart_priv*)d->priv)->regs;
 }
 
-static inline void cdev_putstring(char * buf, int len)
-{
-    for(int i = 0; i < len; i++)
-    {
-        ps_cdev_putchar(&char_dev, buf[i]);
-    }
-}
-
-struct ps_chardevice* vuart_init(struct ps_io_ops* io_ops)
-{
-  struct ps_chardevice temp_device;
-
-  /* Initialize input ring buffer */
-  input_buffer_ring.buf = (char *)malloc(sizeof(char) * VUART_BUFLEN);
-  if (NULL == input_buffer_ring.buf) {
-      return NULL;
-  }
-  input_buffer_ring.size = VUART_BUFLEN;
-  ring_buf_reset(&input_buffer_ring);
-
-  /* Initialize virtual console character device */
-  if (ps_cdev_init(VCONSOLE_ID, io_ops, &temp_device)) {
-    char_dev = temp_device;
-  } else {
-    printf("Failed to intialize vuart\n");
-    return NULL;
-  }
-
-  return &char_dev;
-}
-
 static void vuart_data_reset(struct device* d)
 {
-  void* uart_regs = vuart_priv_get_regs(d);
+    void* uart_regs = vuart_priv_get_regs(d);
 
-  /* Default UART registers as defined in the ZUS+ TRM. Since
-   * we are emulating the device, we want the VM to see the
-   * registers with the values it would expect on reset.
-   */
-  const uint32_t reset_data[] = { 0x00000128,
-                                  0x00000000,
-                                  0x00000000,
-                                  0x00000000,
-                                  0x00000000,
-                                  0x00000200,
-                                  0x0000028B,
-                                  0x00000000,
-                                  0x00000020,
-                                  0x00000000,
-                                  0x00000000,
-                                  0x00000000,
-                                  0x00000000,
-                                  0x0000000F,
-                                  0x00000000,
-                                  0x00000000,
-                                  0x00000000,
-                                  0x00000020};
-  memcpy(uart_regs, reset_data, sizeof(reset_data));
+    /* Default UART registers as defined in the ZUS+ TRM. Since
+     * we are emulating the device, we want the VM to see the
+     * registers with the values it would expect on reset.
+     */
+    const uint32_t reset_data[] = { 0x00000128,
+                                    0x00000000,
+                                    0x00000000,
+                                    0x00000000,
+                                    0x00000000,
+                                    0x00000200,
+                                    0x0000028B,
+                                    0x00000000,
+                                    0x00000020,
+                                    0x00000000,
+                                    0x00000000,
+                                    0x00000000,
+                                    0x00000000,
+                                    0x0000000F,
+                                    0x00000000,
+                                    0x00000000,
+                                    0x00000000,
+                                    0x00000020};
+    memcpy(uart_regs, reset_data, sizeof(reset_data));
 }
 
 /* Called by the VM to ACK a virtual IRQ */
@@ -300,29 +152,6 @@ vuart_ack(void* token)
     }
 }
 
-static void next_active_uart(void)
-{
-  struct vuart_priv* vuart_data;
-  char color_buf[COLOR_BUF_SZ];
-  char name[NAME_BUF_SZ];
-
-  vuarts_active_cursor = vuarts_active_cursor->next;
-  vuart_data = vuarts_active_cursor->vuart_data;
-
-  ring_buf_reset(&input_buffer_ring);
-
-  sprintf(color_buf, "%s", choose_colour(vuart_data->vm));
-  cdev_putstring(color_buf, strlen(color_buf));
-
-  sprintf(name, "\nSwitched to %s",vuart_data->vm->name);
-  cdev_putstring(name, strlen(name));
-
-  memset(color_buf, 0, COLOR_BUF_SZ);
-
-  sprintf(color_buf, "%s", choose_colour(NULL));
-  cdev_putstring(color_buf, strlen(color_buf));
-}
-
 static void
 vuart_inject_irq(struct vuart_priv* vuart)
 {
@@ -332,39 +161,17 @@ vuart_inject_irq(struct vuart_priv* vuart)
     }
 }
 
-void vuart_handle_irq(void)
+void vuart_handle_irq(int c)
 {
-  int c;
-  zynq_uart_regs_t* uart_regs = (zynq_uart_regs_t*)vuarts_active_cursor->vuart_data->regs;
+    zynq_uart_regs_t* uart_regs = (zynq_uart_regs_t*)vuart_data->regs;
 
-  do
-  {
-    c = ps_cdev_getchar(&char_dev);
-    if(c == CTRL_CHAR)
+    ring_buf_put(&input_buffer_ring, (char) c);
+
+    if(!ring_buf_empty(&input_buffer_ring))
     {
-      next_active_uart();
-
-      /* By forcing a newline in the console the user will automatically get a prompt after switching.
-       * This does mean that if there is a command that wasn't completed when switching, it will go through when
-       * switching back.
-       */
-      ring_buf_put(&input_buffer_ring, '\n');
-
-      uart_regs = (zynq_uart_regs_t*)vuarts_active_cursor->vuart_data->regs;
+        uart_regs->isr |= UART_ISR_RTRIG;
+        vuart_inject_irq(vuart_data);
     }
-    else if(c != -1)
-    {
-      /* Since it is a ring buffer, any old data will just get overwritten */
-      ring_buf_put(&input_buffer_ring, (char) c);
-    }
-  } while(c != -1);
-
-  if(!ring_buf_empty(&input_buffer_ring))
-  {
-    uart_regs->isr |= UART_ISR_RTRIG;
-    vuart_inject_irq(vuarts_active_cursor->vuart_data);
-  }
-
 }
 
 static void
@@ -377,7 +184,9 @@ flush_vconsole_device(struct device* d)
     assert(d->priv);
     buf = vuart_data->buffer;
 
-    cdev_putstring(buf, vuart_data->buf_pos);
+    for(int i = 0; i < vuart_data->buf_pos; i++) {
+        vuart_data->callback(buf[i]);
+    }
 
     vuart_data->buf_pos = 0;
 }
@@ -390,9 +199,6 @@ vuart_putchar(struct device* d, char c)
     zynq_uart_regs_t* uart_regs = (zynq_uart_regs_t*)vuart_priv_get_regs(d);
     vuart_data = (struct vuart_priv*)d->priv;
 
-    if (vuart_data->buf_pos == VUART_BUFLEN) {
-        flush_vconsole_device(d);
-    }
     assert(vuart_data->buf_pos < VUART_BUFLEN);
     vuart_data->buffer[vuart_data->buf_pos++] = c;
 
@@ -405,7 +211,7 @@ vuart_putchar(struct device* d, char c)
 
     if(uart_regs->imr & UART_ISR_TEMPTY)
     {
-      uart_regs->isr |= UART_ISR_TEMPTY;
+        uart_regs->isr |= UART_ISR_TEMPTY;
     }
 
     vuart_inject_irq(vuart_data);
@@ -436,32 +242,30 @@ handle_vuart_fault(struct device* d, vm_t* vm, fault_t* fault)
         return ignore_fault(fault);
     } else if (fault_is_read(fault)) {
         switch(offset) {
-          case SR:
+        case SR:
             data = 0;
             if(ring_buf_empty(&input_buffer_ring))
             {
-              data |= UART_SR_REMPTY;
+                data |= UART_SR_REMPTY;
             }
             data |= UART_SR_TEMPTY;
             fault_set_data(fault, data);
             return advance_fault(fault);
-          case ISR:
+        case ISR:
             fault_set_data(fault, uart_regs->isr);
             return advance_fault(fault);
-          case FIFO:
-            if(vm->vmid == vuarts_active_cursor->vuart_data->vm->vmid) {
-              if(!ring_buf_empty(&input_buffer_ring))
-              {
+        case FIFO:
+            if(!ring_buf_empty(&input_buffer_ring))
+            {
                 ring_buf_get(&input_buffer_ring, (char *)&data);
                 fault_set_data(fault, data);
-              }
-              if(ring_buf_empty(&input_buffer_ring))
-              {
+            }
+            if(ring_buf_empty(&input_buffer_ring))
+            {
                 uart_regs->isr &= ~UART_ISR_RTRIG;
-              }
             }
             return advance_fault(fault);
-          default:
+        default:
             /* Blindly read out data */
             fault_set_data(fault, *reg);
         }
@@ -470,21 +274,21 @@ handle_vuart_fault(struct device* d, vm_t* vm, fault_t* fault)
     } else { /* if(fault_is_write(fault))*/
         switch(offset) {
         case IER:
-          /* Set bits get set in Interrupt Mask */
-          v = (fault_get_data(fault) & mask);
-          uart_regs->imr |= v;
-          return advance_fault(fault);
+            /* Set bits get set in Interrupt Mask */
+            v = (fault_get_data(fault) & mask);
+            uart_regs->imr |= v;
+            return advance_fault(fault);
         case IDR:
-          /* Set bits get cleared in Interrupt Mask */
-          v = ~(fault_get_data(fault) & mask);
-          uart_regs->imr &= v;
-          return advance_fault(fault);
+            /* Set bits get cleared in Interrupt Mask */
+            v = ~(fault_get_data(fault) & mask);
+            uart_regs->imr &= v;
+            return advance_fault(fault);
         case ISR:
-          /* Only clear set bits */
-          v = uart_regs->isr & ~mask;
-          v &= ~(fault_get_data(fault) & mask);
-          uart_regs->isr = v;
-          return advance_fault(fault);
+            /* Only clear set bits */
+            v = uart_regs->isr & ~mask;
+            v &= ~(fault_get_data(fault) & mask);
+            uart_regs->isr = v;
+            return advance_fault(fault);
         case BAUDGEN:
         case RXTOUT:
         case RXWM:
@@ -494,28 +298,25 @@ handle_vuart_fault(struct device* d, vm_t* vm, fault_t* fault)
         case FLOWDEL:
         case MR:
         case TXWM:
-          /* Blindly write to the device */
-          v = *reg & ~mask;
-          v |= fault_get_data(fault) & mask;
-          *reg = v;
-          return advance_fault(fault);
+            /* Blindly write to the device */
+            v = *reg & ~mask;
+            v |= fault_get_data(fault) & mask;
+            *reg = v;
+            return advance_fault(fault);
         case FIFO:
-          /* Write character to the uart for the active VM */
-          if(vm->vmid == vuarts_active_cursor->vuart_data->vm->vmid) {
             vuart_putchar(d, fault_get_data(fault));
-          }
-          return advance_fault(fault);
+            return advance_fault(fault);
         case CR:
-          v = *reg & ~mask;
-          v |= fault_get_data(fault) & mask;
-          /* Always make sure self clearing bits are cleared
-           * since we don't actually let the VM control the UART
-           */
-          v &= ~(UART_CR_SELF_CLEARING_BITS);
-          *reg = v;
-          return advance_fault(fault);
+            v = *reg & ~mask;
+            v |= fault_get_data(fault) & mask;
+            /* Always make sure self clearing bits are cleared
+             * since we don't actually let the VM control the UART
+             */
+            v &= ~(UART_CR_SELF_CLEARING_BITS);
+            *reg = v;
+            return advance_fault(fault);
         default:
-          return ignore_fault(fault);
+            return ignore_fault(fault);
         }
     }
     abandon_fault(fault);
@@ -524,83 +325,65 @@ handle_vuart_fault(struct device* d, vm_t* vm, fault_t* fault)
 
 const struct device dev_uart0 = {
     .devid = DEV_UART0,
-    .attr = DEV_ATTR_NONE,
     .name = "uart0",
     .pstart = UART0_PADDR,
     .size = 0x1000,
-    .sid = 0,
     .handle_page_fault = NULL,
     .priv = NULL
 };
 
 const struct device dev_uart1 = {
     .devid = DEV_UART1,
-    .attr = DEV_ATTR_EMU,
     .name = "uart1",
     .pstart = UART1_PADDR,
     .size = 0x1000,
-    .sid = 0,
     .handle_page_fault = &handle_vuart_fault,
     .priv = NULL
 };
 
-int vm_install_vconsole(vm_t* vm, int virq)
+int vm_install_vconsole(vm_t* vm, int virq, struct device *d, print_func_t func)
 {
-    int err;
-    struct vuart_priv *vuart_data;
-    vuart_node_t* vuart_node;
-    struct device d;
+    static int once = 0;
 
-    d = dev_vconsole;
+    ZF_LOGF_IF(once, "Only install vconsole once\n");
+
+    int err;
 
     /* Initialise the virtual device */
-    vuart_data = malloc(sizeof(struct vuart_priv));
-    if (NULL == vuart_data) {
-        assert(vuart_data);
-        return -1;
-    }
-    memset(vuart_data, 0, sizeof(*vuart_data));
+    vuart_data = calloc(1, sizeof(struct vuart_priv));
+    ZF_LOGF_IF(NULL == vuart_data, "Failed to malloc vconsole device\n");
+
     vuart_data->vm = vm;
     vuart_data->int_pending = 0;
+    vuart_data->callback = func;
 
-    vuart_data->regs = map_emulated_device(vm, &d);
-    assert(vuart_data->regs);
-    if (NULL == vuart_data->regs) {
-        free(vuart_data);
-        return -1;
-    }
+    vuart_data->regs = map_emulated_device(vm, d);
+    ZF_LOGF_IF(NULL == vuart_data->regs, "Failed to map emulated vconsole device\n");
 
-    d.priv = vuart_data;
+    d->priv = vuart_data;
 
-    vuart_node = create_vuart_node(vuart_data);
-    assert(NULL != vuart_node);
-    if (NULL == vuart_node) {
-        free(vuart_data);
-        return -1;
-    }
-
-    vuart_data_reset(&d);
+    vuart_data_reset(d);
 
     /* Initialise virtual IRQ */
     vuart_data->virq = vm_virq_new(vm, virq, &vuart_ack, vuart_data);
-    if (vuart_data->virq == NULL) {
-        vuart_destroy(vm);
-        return -1;
-    }
+    ZF_LOGF_IF(NULL == vuart_data->virq, "Failed to initialize vconsole virq\n");
 
-    err = vm_add_device(vm, &d);
-    assert(!err);
-    if (err) {
-        vuart_destroy(vm);
-        return -1;
-    }
+    err = vm_add_device(vm, d);
+    ZF_LOGF_IF(err, "Failed to add vconsole device\n");
+
+    /* Initialize input ring buffer */
+    input_buffer_ring.buf = (char *)malloc(sizeof(char) * VUART_BUFLEN);
+    ZF_LOGF_IF(NULL == input_buffer_ring.buf, "Failed to initialize input ring buffer\n");
+
+    input_buffer_ring.size = VUART_BUFLEN;
+    ring_buf_reset(&input_buffer_ring);
+
+    once = 1;
 
     return 0;
 }
 
 int vm_uninstall_vconsole(vm_t* vm)
 {
-    next_active_uart();
-    vuart_destroy(vm);
     return 0;
 }

@@ -21,3 +21,8 @@ extern const struct device dev_vram;
 
 extern const struct device dev_uart0;
 extern const struct device dev_uart1;
+
+typedef void (*print_func_t)(int);
+
+int vm_install_vconsole(vm_t* vm, int virq, struct device *d, print_func_t func);
+void vuart_handle_irq(int c);
