@@ -10,3 +10,15 @@
 
 #include <sel4arm-vmm/plat/device_map.h>
 #include <sel4arm-vmm/devices.h>
+
+const struct device dev_gem3 = {
+    .devid = DEV_CUSTOM,
+    .name = "gem3",
+    .pstart = GEM3_PADDR,
+    .size = 0x1000,
+#ifdef CONFIG_ARM_SMMU_V2
+    .sid = 0x877,
+#endif
+    .handle_page_fault = NULL,
+    .priv = NULL
+};
