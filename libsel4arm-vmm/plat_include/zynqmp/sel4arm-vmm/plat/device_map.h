@@ -17,6 +17,8 @@
 /* UART */
 #define UART0_PADDR           0xFF000000
 #define UART1_PADDR           0xFF010000
+#define UART0_IRQ             53
+#define UART1_IRQ             54
 
 /* Misc Devices */
 #define GEM3_PADDR            0xFF0E0000

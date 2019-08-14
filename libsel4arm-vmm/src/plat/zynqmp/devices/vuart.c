@@ -339,11 +339,11 @@ const struct device dev_uart1 = {
 #ifdef CONFIG_ARM_SMMU_V2
     .sid = NO_STREAM_ID,
 #endif
-    .handle_page_fault = &handle_vuart_fault,
+    .handle_page_fault = NULL,
     .priv = NULL
 };
 
-int vm_install_vconsole(vm_t* vm, int virq, struct device *d, print_func_t func)
+int vm_install_vconsole(vm_t* vm, print_func_t func)
 {
     static int once = 0;
 
@@ -359,15 +359,18 @@ int vm_install_vconsole(vm_t* vm, int virq, struct device *d, print_func_t func)
     vuart_data->int_pending = 0;
     vuart_data->callback = func;
 
+    struct device *d = (struct device *)&dev_vconsole;
+
     vuart_data->regs = map_emulated_device(vm, d);
     ZF_LOGF_IF(NULL == vuart_data->regs, "Failed to map emulated vconsole device\n");
 
     d->priv = vuart_data;
+    d->handle_page_fault = handle_vuart_fault;
 
     vuart_data_reset(d);
 
     /* Initialise virtual IRQ */
-    vuart_data->virq = vm_virq_new(vm, virq, &vuart_ack, vuart_data);
+    vuart_data->virq = vm_virq_new(vm, VCONSOLE_IRQ, &vuart_ack, vuart_data);
     ZF_LOGF_IF(NULL == vuart_data->virq, "Failed to initialize vconsole virq\n");
 
     err = vm_add_device(vm, d);
