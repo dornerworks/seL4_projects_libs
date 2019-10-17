@@ -32,10 +32,11 @@
  * @param {ps_io_ops_t *} ps_io_ops     Initialised handle to platforms io ops
  * @param {seL4_CPtr} host_enpoint      Host's endpoint. The library will wait and manage the endpoint when running a VM instance
  * @param {const char *} name           String used to describe VM. Useful for debugging
+ * @param {unsigned int} id             The unique integer ID for the VM
  * @return                              0 on success, otherwise -1 for error
  */
 int vm_init(vm_t *vm, vka_t *vka, simple_t *host_simple, vspace_t host_vspace,
-            ps_io_ops_t *io_ops, seL4_CPtr host_endpoint, const char *name);
+            ps_io_ops_t *io_ops, seL4_CPtr host_endpoint, const char *name, unsigned int id);
 
 /***
  * @function vm_create_vcpu(vm, priority)
