@@ -94,7 +94,7 @@ static void pci_cfg_write_fault(vm_vcpu_t *vcpu, uint8_t offset, size_t len, vmm
     mask = get_vcpu_fault_data_mask(vcpu);
     value = get_vcpu_fault_data(vcpu) & mask;
 
-    err = dev->iowrite((void *)dev->cookie, offset, len, value);
+    err = dev->iowrite((void *)dev->cookie, offset, get_vcpu_fault_size(vcpu), value);
     if (err) {
         ZF_LOGE("Failure writing to PCI CFG device");
     }
