@@ -16,8 +16,8 @@
 #define GIC_PADDR   0xF9000000
 #define MAX_VIRQS   200
 
-#define dev_vconsole  dev_uart1
-#define VCONSOLE_IRQ  UART1_IRQ
+#define dev_vconsole  dev_uart0
+#define VCONSOLE_IRQ  UART0_IRQ
 
 /* Devices that the VM Needs */
 extern const struct device dev_vram;
