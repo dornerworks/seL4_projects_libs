@@ -112,7 +112,7 @@ int vm_create_vcpu_arch(vm_t *vm, vm_vcpu_t *vcpu)
 
 #ifdef CONFIG_DEBUG_BUILD
     char vcpu_name[32];
-    snprintf(vcpu_name, sizeof(vcpu_name), "%s:%d", vm->vm_name, vcpu->vcpu_id);
+    snprintf(vcpu_name, sizeof(vcpu_name), "%s:Core%d", vm->vm_name, vcpu->vcpu_id);
     seL4_DebugNameThread(vm_get_vcpu_tcb(vcpu), vcpu_name);
 #endif
 
