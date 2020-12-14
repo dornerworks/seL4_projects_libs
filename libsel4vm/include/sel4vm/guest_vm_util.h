@@ -72,6 +72,25 @@ static inline vm_vcpu_t *vm_find_free_unassigned_vcpu(vm_t *vm)
     return NULL;
 }
 
+static inline int vm_find_free_unassigned_cpu(vm_t *vm)
+{
+
+    for (int core = 0; core < vm->num_vcpus; core++) {
+        int core_allocated = 0;
+        for (int i = 0; i < vm->num_vcpus; i++) {
+            if (vm->vcpus[i]->target_cpu == core) {
+                core_allocated = 1;
+                break;
+            }
+        }
+        if (core_allocated) {
+            continue;
+        }
+        return core;
+    }
+    return -1;
+}
+
 /***
  * @function is_vcpu_online(vcpu)
  * Find if a given VCPU is online
