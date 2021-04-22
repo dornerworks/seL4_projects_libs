@@ -208,6 +208,9 @@ struct vm {
     /* vm entry address */
     seL4_Word entry;
 
+#ifdef CONFIG_KERNEL_MCS
+    vka_object_t reply;
+#endif
     /* Debugging & Identification */
     char *vm_name;
     unsigned int vm_id;

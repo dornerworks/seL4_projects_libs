@@ -281,6 +281,7 @@ int vm_vgic_maintenance_handler(vm_vcpu_t *vcpu)
     assert(idx >= 0);
 
     int err = handle_vgic_maintenance(vcpu, idx);
+#ifndef CONFIG_KERNEL_MCS
     if (!err) {
         seL4_MessageInfo_t reply;
         reply = seL4_MessageInfo_new(0, 0, 0, 0);
@@ -288,6 +289,7 @@ int vm_vgic_maintenance_handler(vm_vcpu_t *vcpu)
     } else {
         ZF_LOGF("vGIC maintenance handler failed (error %d)", err);
     }
+#endif
     return VM_EXIT_HANDLED;
 }
 

@@ -38,6 +38,15 @@ int vm_init(vm_t *vm, vka_t *vka, simple_t *host_simple, vspace_t host_vspace,
     vm->mem.num_ram_regions = 0;
     vm->mem.ram_regions = malloc(0);
     assert(vm->vcpus);
+
+#ifdef CONFIG_KERNEL_MCS
+    err = vka_alloc_reply(vm->vka, &vm->reply);
+    if (err) {
+        ZF_LOGE("Failed to initialise VM reply object");
+        return err;
+    }
+#endif
+
     /* Initialise vm memory management interface */
     err = vm_memory_init(vm);
     if (err) {
@@ -94,11 +103,13 @@ int vm_assign_vcpu_target(vm_vcpu_t *vcpu, int target_cpu)
         return -1;
     }
 
+#ifndef CONFIG_KERNEL_MCS
 #if CONFIG_MAX_NUM_NODES > 1
     if (seL4_TCB_SetAffinity(vcpu->tcb.tcb.cptr, target_cpu)) {
         return -1;
     }
 #endif /* CONFIG_MAX_NUM_NODES > 1 */
+#endif
 
     vcpu->target_cpu = target_cpu;
     return 0;
