@@ -291,9 +291,12 @@ int new_vcpu_fault(fault_t *fault, uint32_t hsr)
     fault->width = -1;
     fault->content = 0;
     fault->stage = 1;
+
+#ifndef CONFIG_KERNEL_MCS
     assert(fault->reply_cap.capPtr);
     err = vka_cnode_saveCaller(&fault->reply_cap);
     assert(!err);
+#endif
 
     return err;
 }
@@ -343,9 +346,11 @@ int new_memory_fault(fault_t *fault)
     }
 
     /* Gather additional information */
+#ifndef CONFIG_KERNEL_MCS
     assert(fault->reply_cap.capPtr);
     err = vka_cnode_saveCaller(&fault->reply_cap);
     assert(!err);
+#endif
 
     return err;
 }
@@ -367,7 +372,10 @@ int restart_fault(fault_t *fault)
     reply = seL4_MessageInfo_new(0, 0, 0, 0);
     DFAULT("%s: Restart fault @ 0x%x from PC 0x%x\n",
            fault->vcpu->vm->vm_name, fault->addr, fault->ip);
+
+#ifndef CONFIG_KERNEL_MCS
     seL4_Send(fault->reply_cap.capPtr, reply);
+#endif
     /* Clean up */
     return abandon_fault(fault);
 }

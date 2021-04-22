@@ -88,9 +88,11 @@ static int vm_vppi_event_handler(vm_vcpu_t *vcpu)
             return -1;
         }
     }
+#ifndef CONFIG_KERNEL_MCS
     seL4_MessageInfo_t reply;
     reply = seL4_MessageInfo_new(0, 0, 0, 0);
     seL4_Reply(reply);
+#endif
     return 0;
 }
 
@@ -110,7 +112,9 @@ static int vm_user_exception_handler(vm_vcpu_t *vcpu)
         print_ctx_regs(&regs);
     }
 
+#ifndef CONFIG_KERNEL_MCS
     seL4_Reply(seL4_MessageInfo_new(0, 0, 0, 0));
+#endif
     return VM_EXIT_HANDLED;
 }
 
@@ -233,11 +237,19 @@ int vm_run_arch(vm_t *vm)
     /* Loop, handling events */
     while (ret > 0) {
         seL4_MessageInfo_t tag;
+#ifdef CONFIG_KERNEL_MCS
+        seL4_MessageInfo_t reply_msg;
+        reply_msg = seL4_MessageInfo_new(0, 0, 0, 0);
+#endif
         seL4_Word sender_badge;
         seL4_Word label;
         int vm_exit_reason;
 
+#ifdef CONFIG_KERNEL_MCS
+        tag = seL4_ReplyRecv(vm->host_endpoint, reply_msg, &sender_badge, vm->reply.cptr);
+#else
         tag = seL4_Recv(vm->host_endpoint, &sender_badge);
+#endif
         label = seL4_MessageInfo_get_label(tag);
         if (sender_badge >= MIN_VCPU_BADGE && sender_badge <= MAX_VCPU_BADGE) {
             seL4_Word vcpu_idx = VCPU_BADGE_IDX(sender_badge);

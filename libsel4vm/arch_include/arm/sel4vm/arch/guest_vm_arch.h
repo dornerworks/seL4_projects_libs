@@ -42,6 +42,9 @@ struct vm_arch {
  * @param {void *} unhandled_vcpu_callback_cookie                       A cookie to supply to the vcpu fault handler
  */
 struct vm_vcpu_arch {
+#ifdef CONFIG_KERNEL_MCS
+    seL4_CPtr fault_ep;
+#endif
     fault_t *fault;
     unhandled_vcpu_fault_callback_fn unhandled_vcpu_callback;
     void *unhandled_vcpu_callback_cookie;
