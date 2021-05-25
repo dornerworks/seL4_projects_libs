@@ -43,6 +43,46 @@ static vm_exit_handler_fn_t x86_exit_handlers[VM_EXIT_REASON_NUM] = {
     [EXIT_REASON_VMCALL] = vm_vmcall_handler,
 };
 
+int vmm_resume_vcpu(vm_vcpu_t *vcpu)
+{
+    if (NULL == vcpu) {
+        ZF_LOGE("Passed in vcpu is NULL");
+        return -1;
+    }
+    int error;
+    seL4_UserContext regs;
+    const int num_regs = sizeof(regs) / sizeof(seL4_Word);
+    error = seL4_TCB_ReadRegisters(vcpu->tcb.tcb.cptr, false, 0, num_regs, &regs);
+    if (error) {
+        ZF_LOGE("Failed to read registers for vcpu %d, error %d", vcpu->vcpu_id, error);
+        return -1;
+    }
+    /* We assume the VCPU has been correctly suspended with vmm_suspend_vcpu.
+     * Therefore, we step over the suspend instruction (0f 05) by incrementing
+     * the instruction pointer by 2 bytes
+     */
+#ifdef CONFIG_ARCH_X86_64
+    regs.rip += 2;
+#else
+    regs.eip += 2;
+#endif
+    /* Write the registers, resuming the thread in the process */
+    error = seL4_TCB_WriteRegisters(vcpu->tcb.tcb.cptr, true, 0, num_regs, &regs);
+    if (error) {
+        ZF_LOGE("Failed to write registers for vcpu %d, error %d", vcpu->vcpu_id, error);
+        return -1;
+    }
+    return 0;
+}
+static int vmm_suspend_vcpu(vm_vcpu_t *vcpu)
+{
+    if (NULL == vcpu) {
+        ZF_LOGE("Passed in vcpu is NULL");
+        return -1;
+    }
+    seL4_TCB_Suspend(vcpu->tcb.tcb.cptr);
+    return 0;
+}
 /* Reply to the VM exit exception to resume guest. */
 static void vm_resume(vm_vcpu_t *vcpu)
 {
@@ -82,6 +122,7 @@ static int handle_vm_exit(vm_vcpu_t *vcpu)
     }
 
     /* Call the handler. */
+    vcpu->vm->exit_lock();
     ret = x86_exit_handlers[reason](vcpu);
     if (ret == -1) {
         printf("VM_FATAL_ERROR ::: vmexit handler return error\n");
@@ -89,8 +130,14 @@ static int handle_vm_exit(vm_vcpu_t *vcpu)
         vcpu->vcpu_online = false;
         return ret;
     }
+    vcpu->vm->exit_unlock();
 
     return ret;
+}
+
+void vcpu_run_secondary(void *arg0, void *arg1, void *ipc_buf) {
+    vm_vcpu_t *vcpu = (vm_vcpu_t *)arg0;
+    vcpu_run(vcpu);
 }
 
 static void vm_update_guest_state_from_interrupt(volatile vm_vcpu_t *vcpu, volatile seL4_Word *msg)
@@ -144,10 +191,17 @@ int vcpu_start(vm_vcpu_t *vcpu)
 
 int vm_run_arch(vm_t *vm)
 {
-    int err;
-    int ret;
     vm_vcpu_t *vcpu = vm->vcpus[BOOT_VCPU];
 
+    return vcpu_run(vcpu);
+}
+
+int vcpu_run(vm_vcpu_t *vcpu)
+{
+    int err;
+    int ret;
+
+    vm_t *vm = vcpu->vm;
 #ifdef CONFIG_ARCH_X86_64
     /* On Linux Kernels below 4.7, startup_64 does not setup a stack before
      * calling verify_cpu, which causes a triple fault. This sets an initial
@@ -157,8 +211,15 @@ int vm_run_arch(vm_t *vm)
     vm_guest_state_set_esp(vcpu->vcpu_arch.guest_state, VMM_INITIAL_STACK);
 #endif
 
+    vcpu->apic_id = vmm_get_current_apic_id();
     vcpu->vcpu_arch.guest_state->virt.interrupt_halt = 0;
     vcpu->vcpu_arch.guest_state->exit.in_exit = 0;
+
+    /* Wait for IPI to start secondary thread */
+    if (BOOT_VCPU != vcpu->vcpu_id) {
+        int error = vmm_suspend_vcpu(vcpu);
+        ZF_LOGF_IF(-1 == error, "Failed to suspend vcpu %d\n", vcpu->vcpu_id);
+    }
 
     /* Sync the existing guest state */
     vm_sync_guest_vmcs_state(vcpu);
@@ -169,10 +230,24 @@ int vm_run_arch(vm_t *vm)
 
     ret = 1;
     vm->run.exit_reason = -1;
+    // Under no circumstances use printf debugging here!
+    // Printf will mess with the registers that are used for message passing
     while (ret > 0) {
         /* Block and wait for incoming msg or VM exits. */
         seL4_Word badge;
         int fault;
+
+        if (vcpu->vcpu_arch.guest_state->sync_guest_state)
+        {
+            vm_sync_guest_vmcs_state(vcpu);
+            vcpu->vcpu_arch.guest_state->sync_guest_state = false;
+        }
+
+        if (vcpu->vcpu_arch.guest_state->sync_guest_context)
+        {
+            vm_sync_guest_context(vcpu);
+            vcpu->vcpu_arch.guest_state->sync_guest_context = false;
+        }
 
         if (vcpu->vcpu_online && !vcpu->vcpu_arch.guest_state->virt.interrupt_halt
             && !vcpu->vcpu_arch.guest_state->exit.in_exit) {
@@ -200,36 +275,47 @@ int vm_run_arch(vm_t *vm)
                 vm_update_guest_state_from_interrupt(vcpu, int_message);
             }
         } else {
-            seL4_Wait(vm->host_endpoint, &badge);
+            seL4_Wait(vcpu->host_endpoint, &badge);
             fault = SEL4_VMENTER_RESULT_NOTIF;
         }
 
         if (fault == SEL4_VMENTER_RESULT_NOTIF) {
-            assert(badge >= vm->num_vcpus);
-            /* assume interrupt */
-            if (vm->run.notification_callback) {
-                seL4_MessageInfo_t tag = {0};
-                err = vm->run.notification_callback(vm, badge, tag, vm->run.notification_callback_cookie);
-                if (err == -1) {
-                    ret = VM_EXIT_HANDLE_ERROR;
-                } else if (i8259_has_interrupt(vm)) {
-                    /* Check if this caused PIC to generate interrupt */
-                    vm_check_external_interrupt(vm);
-                }
-            } else {
-                ZF_LOGE("Unable to handle VM notification. Exiting");
-                ret = VM_EXIT_HANDLE_ERROR;
+            if (0 == badge)
+            {
+                /* IPI */
+                vm_vcpu_accept_interrupt(vcpu);
+                continue;
             }
-        } else {
-            /* Handle the vm exit */
-            ret = handle_vm_exit(vcpu);
-            vm_check_external_interrupt(vm);
+
+            /* assume interrupt */
+            if (BOOT_VCPU == vcpu->vcpu_id)
+            {
+                if (vm->run.notification_callback) {
+                    /* only handle events on primary core */
+                    seL4_MessageInfo_t tag = {0};
+                    err = vm->run.notification_callback(vm, badge, tag, vm->run.notification_callback_cookie);
+                    if (err == -1) {
+                        ret = VM_EXIT_HANDLE_ERROR;
+                    } else if (i8259_has_interrupt(vm)) {
+                        /* Check if this caused PIC to generate interrupt */
+                        vm_check_external_interrupt(vm);
+                    }
+                    continue;
+                }
+            }
         }
+        /* Handle the vm exit */
+        ret = handle_vm_exit(vcpu);
 
         if (ret == VM_EXIT_HANDLE_ERROR) {
             vm->run.exit_reason = VM_GUEST_ERROR_EXIT;
         } else {
             vm_resume(vcpu);
+        }
+
+        if (BOOT_VCPU == vcpu->vcpu_id)
+        {
+            vm_check_external_interrupt(vm);
         }
 
     }

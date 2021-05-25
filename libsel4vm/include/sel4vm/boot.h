@@ -22,6 +22,10 @@
  */
 #define BOOT_VCPU 0
 
+#define GUEST_VSPACE_ROOT     0x10000000
+#define GUEST_VSPACE_PDPT     0x10001000
+#define GUEST_VSPACE_PD       0x10002000
+
 /***
  * @function vm_init(vm, vka, host_simple, host_vspace, io_ops, host_endpoint, name)
  * Initialise/Create VM
@@ -36,6 +40,16 @@
  */
 int vm_init(vm_t *vm, vka_t *vka, simple_t *host_simple, vspace_t host_vspace,
             ps_io_ops_t *io_ops, seL4_CPtr host_endpoint, const char *name);
+
+/***
+ * @function vm_set_mutex_fns(vm_t *vm, exit_lock_fn exit_lock, exit_unlock_fn exit_unlock)
+ * Set the exit lock and unlock functions for a VM
+ * @param {vm_t *} vm                            Handle to the VM being initialised
+ * @param {exit_lock_callback_fn} exit_lock      A pointer to the exit lock function
+ * @param {exit_unlock_callback_fn} exit_unlock  A pointer to the exit unlock function
+ * @return                                       0 on success, otherwise -1 for error
+ */
+int vm_set_mutex_fns(vm_t *vm, exit_lock_callback_fn exit_lock, exit_unlock_callback_fn exit_unlock);
 
 /***
  * @function vm_create_vcpu(vm, priority)

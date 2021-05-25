@@ -56,6 +56,15 @@ int vm_init(vm_t *vm, vka_t *vka, simple_t *host_simple, vspace_t host_vspace,
     return 0;
 }
 
+int vm_set_mutex_fns(vm_t *vm, exit_lock_callback_fn exit_lock,
+                     exit_unlock_callback_fn exit_unlock)
+{
+    vm->exit_lock = exit_lock;
+    vm->exit_unlock = exit_unlock;
+
+    return 0;
+}
+
 vm_vcpu_t *vm_create_vcpu(vm_t *vm, int priority)
 {
     int err;

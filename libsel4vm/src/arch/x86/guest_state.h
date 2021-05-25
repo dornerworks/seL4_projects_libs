@@ -11,6 +11,8 @@
 #include <sel4/sel4.h>
 
 #include <sel4vm/arch/vmcs_fields.h>
+#include <sel4vm/boot.h>
+#include <processor/cpuid.h>
 
 #include "vmcs.h"
 
@@ -129,6 +131,8 @@ typedef struct guest_state {
     /* Information relating specifically to a guest exist, that is generated
      * as a result of the exit */
     guest_exit_information_t exit;
+    bool sync_guest_state;
+    bool sync_guest_context;
 } guest_state_t;
 
 static inline bool vm_guest_state_no_modified(guest_state_t *gs)
@@ -679,6 +683,12 @@ static inline void vm_guest_state_sync_entry_exception_error_code(guest_state_t 
 
 static inline void vm_sync_guest_vmcs_state(vm_vcpu_t *vcpu)
 {
+    if(vmm_get_current_apic_id() != vcpu->apic_id)
+    {
+        vcpu->vcpu_arch.guest_state->sync_guest_state = true;
+        return;
+    }
+
     vm_guest_state_sync_cr0(vcpu->vcpu_arch.guest_state, vcpu->vcpu.cptr);
     vm_guest_state_sync_cr3(vcpu->vcpu_arch.guest_state, vcpu->vcpu.cptr);
     vm_guest_state_sync_cr4(vcpu->vcpu_arch.guest_state, vcpu->vcpu.cptr);

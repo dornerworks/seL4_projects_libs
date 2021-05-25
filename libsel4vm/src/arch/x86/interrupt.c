@@ -19,6 +19,7 @@
 #include "guest_state.h"
 #include "processor/decode.h"
 #include "processor/lapic.h"
+#include "processor/cpuid.h"
 #include "interrupt.h"
 
 #define TRAMPOLINE_LENGTH (100)
@@ -77,10 +78,35 @@ int can_inject(vm_vcpu_t *vcpu)
     return 0;
 }
 
+void static vm_reply_exit(vm_vcpu_t *vcpu)
+{
+    ZF_LOGF_IF(!vcpu->vcpu_arch.guest_state->exit.in_exit,
+               "VCPU %d not in_exit\n", vcpu->vcpu_id);
+
+    if (IS_MACHINE_STATE_MODIFIED(
+            vcpu->vcpu_arch.guest_state->machine.context))
+    {
+        vm_sync_guest_context(vcpu);
+    }
+
+    /* Before we resume the guest, ensure there is no dirty state around */
+    ZF_LOGF_IF(!vm_guest_state_no_modified(vcpu->vcpu_arch.guest_state),
+               "VCPU %d was modified\n", vcpu->vcpu_id);
+    vm_guest_state_invalidate_all(vcpu->vcpu_arch.guest_state);
+
+    vcpu->vcpu_arch.guest_state->exit.in_exit = 0;
+}
+
+
 /* This function is called by the local apic when a new interrupt has occured. */
 void vm_have_pending_interrupt(vm_vcpu_t *vcpu)
 {
-    if (vm_apic_has_interrupt(vcpu) >= 0) {
+    if (vmm_get_current_apic_id() != vcpu->apic_id)
+    {
+        /* This would imply an IPI, so let the destination VCPU handle it */
+        seL4_Signal(vcpu->host_endpoint);
+    }
+    else if (vm_apic_has_interrupt(vcpu) >= 0) {
         /* there is actually an interrupt to inject */
         if (can_inject(vcpu)) {
             if (vcpu->vcpu_arch.guest_state->virt.interrupt_halt) {
@@ -88,6 +114,8 @@ void vm_have_pending_interrupt(vm_vcpu_t *vcpu)
                  * in a state where it can inject again */
                 wait_for_guest_ready(vcpu);
                 vcpu->vcpu_arch.guest_state->virt.interrupt_halt = 0;
+                vm_sync_guest_vmcs_state(vcpu);
+                vm_reply_exit(vcpu);
             } else {
                 int irq = vm_apic_get_interrupt(vcpu);
                 inject_irq(vcpu, irq);
@@ -100,6 +128,8 @@ void vm_have_pending_interrupt(vm_vcpu_t *vcpu)
             wait_for_guest_ready(vcpu);
             if (vcpu->vcpu_arch.guest_state->virt.interrupt_halt) {
                 vcpu->vcpu_arch.guest_state->virt.interrupt_halt = 0;
+                vm_sync_guest_vmcs_state(vcpu);
+                vm_reply_exit(vcpu);
             }
         }
     }
@@ -127,14 +157,15 @@ int vm_pending_interrupt_handler(vm_vcpu_t *vcpu)
 void vm_start_ap_vcpu(vm_vcpu_t *vcpu, unsigned int sipi_vector)
 {
     ZF_LOGD("trying to start vcpu %d\n", vcpu->vcpu_id);
-
+    int error;
     uint16_t segment = sipi_vector * 0x100;
     uintptr_t eip = sipi_vector * 0x1000;
     guest_state_t *gs = vcpu->vcpu_arch.guest_state;
+    vm_vcpu_t *boot_vcpu = vcpu->vm->vcpus[BOOT_VCPU];
 
     /* Emulate up to 100 bytes of trampoline code */
     uint8_t instr[TRAMPOLINE_LENGTH];
-    vm_fetch_instruction(vcpu, eip, vm_guest_state_get_cr3(gs, vcpu->vcpu.cptr),
+    vm_fetch_instruction(boot_vcpu, eip, vm_guest_state_get_cr3(gs, vcpu->vcpu.cptr),
                          TRAMPOLINE_LENGTH, instr);
 
     eip = vm_emulate_realmode(vcpu, instr, &segment, eip,
@@ -144,7 +175,7 @@ void vm_start_ap_vcpu(vm_vcpu_t *vcpu, unsigned int sipi_vector)
     /* 64-bit guests go from realmode to 32-bit emulation mode to longmode */
     memset(instr, 0, TRAMPOLINE_LENGTH);
 
-    vm_fetch_instruction(vcpu, eip, vm_guest_state_get_cr3(gs, vcpu->vcpu.cptr),
+    vm_fetch_instruction(boot_vcpu, eip, vm_guest_state_get_cr3(gs, vcpu->vcpu.cptr),
                          TRAMPOLINE_LENGTH, instr);
 
     eip = vm_emulate_realmode(vcpu, instr, &segment, eip,
@@ -153,11 +184,9 @@ void vm_start_ap_vcpu(vm_vcpu_t *vcpu, unsigned int sipi_vector)
 
     vm_guest_state_set_eip(vcpu->vcpu_arch.guest_state, eip);
 
-    vm_sync_guest_context(vcpu);
-    vm_sync_guest_vmcs_state(vcpu);
-
-    assert(!"no tcb");
-//    seL4_TCB_Resume(vcpu->guest_tcb);
+    vcpu_start(vcpu);
+    error = vmm_resume_vcpu(vcpu);
+    ZF_LOGF_IF(-1 == error, "Failed to resume vcpu %d", vcpu->vcpu_id);
 }
 
 /* Got interrupt(s) from PIC, propagate to relevant vcpu lapic */
@@ -165,8 +194,9 @@ void vm_check_external_interrupt(vm_t *vm)
 {
     /* TODO if all lapics are enabled, store which lapic
        (only one allowed) receives extints, and short circuit this */
+    vm_vcpu_t *vcpu = vm->vcpus[BOOT_VCPU];
     if (i8259_has_interrupt(vm) != -1) {
-        vm_vcpu_t *vcpu = vm->vcpus[BOOT_VCPU];
+
         if (vm_apic_accept_pic_intr(vcpu)) {
             vm_vcpu_accept_interrupt(vcpu);
         }

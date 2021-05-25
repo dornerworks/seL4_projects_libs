@@ -53,6 +53,19 @@ typedef memory_fault_result_t (*unhandled_mem_fault_callback_fn)(vm_t *vm, vm_vc
 typedef int (*notification_callback_fn)(vm_t *vm, seL4_Word badge, seL4_MessageInfo_t tag,
                                         void *cookie);
 
+/**
+ * Type signature of exit lock callback, invoked when an exit hanlder needs to be locked by the vm runtime
+ * @return                              -1 on failure otherwise 0 for success
+ */
+
+typedef int (*exit_lock_callback_fn) (void);
+
+/**
+ * Type signature of exit unlock callback, invoked when an exit hanlder needs to be unlocked by the vm runtime
+ * @return                              -1 on failure otherwise 0 for success
+ */
+typedef int (*exit_unlock_callback_fn) (void);
+
 /***
  * @struct vm_ram_region
  * Structure representing individual RAM region. A VM can have multiple regions to represent its total RAM
@@ -138,6 +151,10 @@ struct vm_vcpu {
     bool vcpu_online;
     /* Architecture specfic vcpu */
     struct vm_vcpu_arch vcpu_arch;
+    /* Host endoint (i.e. vmm) to wait for VM faults and host events */
+    seL4_CPtr host_endpoint;
+    /* Local APIC */
+    int apic_id;
 };
 
 /***
@@ -203,6 +220,14 @@ struct vm {
     char *vm_name;
     unsigned int vm_id;
     bool vm_initialised;
+    /* VM Exit lock and unlock callback functions */
+    /*  There are times when mulitple vcpus exit and try to access the
+     *  same resource. Setting these callback functions lets us use a
+     *  mutex function provided by the runtime such as CAmkES. These
+     *  callbacks get called on every VM Exit.
+     */
+    exit_lock_callback_fn exit_lock;
+    exit_unlock_callback_fn exit_unlock;
 };
 
 /***
@@ -221,6 +246,24 @@ int vm_run(vm_t *vm);
  * @return                      0 on success, -1 on error
  */
 int vcpu_start(vm_vcpu_t *vcpu);
+
+/***
+ * @function vcpu_run(vcpu)
+ * Run an initialised vcpu thread
+ * @param {vm_vcpu_t *} vcpu    A handle to vcpu to start
+ * @return                      0 on success, -1 on error
+ */
+int vcpu_run(vm_vcpu_t *vcpu);
+
+/***
+ * @function vcpu_run_secondary(void *arg0, void *arg1, void *ipc_buf)
+ * Implements the sel4utils_thread_entry_fn function prototype. Used
+ * as an entry point for a secondary cpu.
+ * @param {void *}arg0          Should be a vcpu
+ * @param {void *}arg1          Unused
+ * @param {void *}ipc_buf       Unused
+ */
+void vcpu_run_secondary(void *arg0, void *arg1, void *ipc_buf);
 
 /* Unhandled fault callback registration functions */
 
@@ -245,3 +288,11 @@ int vm_register_unhandled_mem_fault_callback(vm_t *vm, unhandled_mem_fault_callb
  */
 int vm_register_notification_callback(vm_t *vm, notification_callback_fn notification_callback,
                                       void *cookie);
+
+/***
+ * @function vmm_resume_vcpu(vm_vcpu_t *vcpu)
+ * Resume a vcpu
+ * @param {vm_vcpu_t *} vcpu                                    VCPU to be resumed
+ * @return                                                      0 on success, -1 on error
+ */
+int vmm_resume_vcpu(vm_vcpu_t *vcpu);

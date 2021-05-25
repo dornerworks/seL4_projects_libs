@@ -48,7 +48,16 @@ static int ram_region_cmp(const void *a, const void *b)
 {
     const vm_ram_region_t *aa = a;
     const vm_ram_region_t *bb = b;
-    return aa->start - bb->start;
+
+    if (aa->start == bb->start)
+    {
+       return 0;
+    } else if (aa->start < bb->start)
+    {
+       return -1;
+    } else {
+       return 1;
+    }
 }
 
 static void sort_guest_ram_regions(vm_mem_t *guest_memory)
@@ -193,7 +202,8 @@ int vm_ram_find_largest_free_region(vm_t *vm, uintptr_t *addr, size_t *size)
     }
     for (i++; i < guest_memory->num_ram_regions; i++) {
         if (!guest_memory->ram_regions[i].allocated &&
-            guest_memory->ram_regions[i].size > guest_memory->ram_regions[largest].size) {
+            guest_memory->ram_regions[i].size > guest_memory->ram_regions[largest].size &&
+            guest_memory->ram_regions[i].start < 0xffffffff) {
             largest = i;
         }
     }

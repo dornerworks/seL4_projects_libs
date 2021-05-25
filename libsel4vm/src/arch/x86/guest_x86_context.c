@@ -184,6 +184,13 @@ int vm_vmcs_write(seL4_CPtr vcpu, seL4_Word field, seL4_Word value)
 
 int vm_sync_guest_context(vm_vcpu_t *vcpu)
 {
+
+    if (vmm_get_current_apic_id() != vcpu->apic_id)
+    {
+        vcpu->vcpu_arch.guest_state->sync_guest_context = true;
+        return 0;
+    }
+
     if (IS_MACHINE_STATE_MODIFIED(vcpu->vcpu_arch.guest_state->machine.context)) {
         seL4_VCPUContext context;
         int err = vm_get_thread_context(vcpu, &context);
@@ -195,5 +202,6 @@ int vm_sync_guest_context(vm_vcpu_t *vcpu)
         /* Sync our context */
         MACHINE_STATE_SYNC(vcpu->vcpu_arch.guest_state->machine.context);
     }
+
     return 0;
 }

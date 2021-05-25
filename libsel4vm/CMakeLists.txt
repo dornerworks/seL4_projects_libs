@@ -74,4 +74,5 @@ target_link_libraries(
     platsupport
     sel4_autoconf
     sel4vm_Config
+    sel4vmmplatsupport
 )

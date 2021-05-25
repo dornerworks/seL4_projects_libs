@@ -512,19 +512,42 @@ int vm_irq_delivery_to_apic(vm_vcpu_t *src_vcpu, struct vm_lapic_irq *irq, unsig
         return vm_apic_set_irq(src_vcpu, irq, dest_map);
     }
 
-    vm_vcpu_t *dest_vcpu = vm->vcpus[BOOT_VCPU];
+    for (i = 0; i < vm->num_vcpus; i++) {
 
-    if (!vm_apic_hw_enabled(dest_vcpu->vcpu_arch.lapic)) {
-        return r;
+        vm_vcpu_t *dest_vcpu = vm->vcpus[i];
+
+        if (!vm_apic_hw_enabled(dest_vcpu->vcpu_arch.lapic)) {
+            ZF_LOGI("[vm_irq_delivery_to_apic] Not HW enabled\n");
+            continue;
+        }
+
+        if (!vm_apic_match_dest(dest_vcpu, src, irq->shorthand,
+                                irq->dest_id, irq->dest_mode)) {
+            ZF_LOGI("[vm_irq_delivery_to_apic] Doesn't Match dest?\n");
+            continue;
+        }
+
+        if (!vm_is_dm_lowest_prio(irq)) {
+            // Normal delivery
+            ZF_LOGI("[vm_irq_delivery_to_apic] Delivery mode is lowest priority\n");
+            if (r < 0) {
+                r = 0;
+            }
+            r += vm_apic_set_irq(dest_vcpu, irq, dest_map);
+        } else if (vm_apic_enabled(dest_vcpu->vcpu_arch.lapic)) {
+            ZF_LOGI("[vm_irq_delivery_to_apic] APIC enabled\n");
+            // Pick vcpu with lowest priority to deliver to
+            if (!lowest) {
+                lowest = dest_vcpu;
+            } else if (vm_apic_compare_prio(dest_vcpu, lowest) < 0) {
+                lowest = dest_vcpu;
+            }
+        }
     }
 
-    if (!vm_apic_match_dest(dest_vcpu, src, irq->shorthand,
-                            irq->dest_id, irq->dest_mode)) {
-        return r;
-    }
-
-    if (!vm_is_dm_lowest_prio(irq) || (vm_apic_enabled(dest_vcpu->vcpu_arch.lapic))) {
-        r = vm_apic_set_irq(dest_vcpu, irq, dest_map);
+    if (lowest) {
+        ZF_LOGI("[vm_irq_delivery_to_apic] Setting irq in destination\n");
+        r = vm_apic_set_irq(lowest, irq, dest_map);
     }
 
     return r;
@@ -790,7 +813,7 @@ static int apic_reg_write(vm_vcpu_t *vcpu, uint32_t reg, uint32_t val)
         break;
     }
     if (ret) {
-        apic_debug(2, "Local APIC Write to read-only register %x\n", reg);
+        apic_debug(2, "Local APIC Write to read-only register 0x%x\n", reg);
     }
     return ret;
 }
@@ -872,11 +895,11 @@ memory_fault_result_t apic_fault_callback(vm_t *vm, vm_vcpu_t *vcpu, uintptr_t f
 {
     seL4_Word data;
     if (is_vcpu_read_fault(vcpu)) {
-        vm_apic_mmio_read(vcpu, cookie, APIC_DEFAULT_PHYS_BASE - fault_addr, fault_length, &data);
+        vm_apic_mmio_read(vcpu, cookie, fault_addr - APIC_DEFAULT_PHYS_BASE, fault_length, &data);
         set_vcpu_fault_data(vcpu, data);
     } else {
         data = get_vcpu_fault_data(vcpu);
-        vm_apic_mmio_write(vcpu, cookie, APIC_DEFAULT_PHYS_BASE - fault_addr, fault_length, data);
+        vm_apic_mmio_write(vcpu, cookie, fault_addr - APIC_DEFAULT_PHYS_BASE, fault_length, data);
     }
     advance_vcpu_fault(vcpu);
     return FAULT_HANDLED;
