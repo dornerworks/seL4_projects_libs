@@ -199,3 +199,19 @@ virtio_net_t *common_make_virtio_net(vm_t *vm, vmm_pci_space_t *pci, vmm_io_port
     assert(net->emul);
     return net;
 }
+
+void common_reset_virtio_net(vm_t *vm, virtio_net_t *net)
+{
+    ps_io_ops_t ioops;
+    ioops.dma_manager = (ps_dma_man_t) {
+        .cookie = NULL,
+        .dma_alloc_fn = malloc_dma_alloc,
+        .dma_free_fn = malloc_dma_free,
+        .dma_pin_fn = malloc_dma_pin,
+        .dma_unpin_fn = malloc_dma_unpin,
+        .dma_cache_op_fn = malloc_dma_cache_op
+    };
+
+    net->emul = virtio_emul_init(ioops, QUEUE_SIZE, vm, emul_driver_init, net, VIRTIO_NET);
+    assert(net->emul);
+}

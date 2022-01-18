@@ -56,6 +56,14 @@ virtio_net_t *common_make_virtio_net(vm_t *vm, vmm_pci_space_t *pci, vmm_io_port
                                      struct raw_iface_funcs backend);
 
 /***
+ * @function common_reset_virtio_net(vm, net)
+ * Re-initialise the virtio emulator
+ * @param {vm_t *} vm           Handle to the VM
+ * @param {virtio_net_t *} net  Hangle to the virtio net
+ */
+void common_reset_virtio_net(vm_t *vm, virtio_net_t *net);
+
+/***
  * @function virtio_net_default_backend()
  * @return          A struct with a default virtio_net backend. It is the responsibility of the caller to
  *                  update these function pointers with its own custom backend.

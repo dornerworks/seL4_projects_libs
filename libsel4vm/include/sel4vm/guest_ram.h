@@ -53,6 +53,8 @@ int vm_guest_ram_read_callback(vm_t *vm, uintptr_t guest_addr, void *vaddr, size
  */
 int vm_guest_ram_write_callback(vm_t *vm, uintptr_t guest_addr, void *vaddr, size_t size, size_t offset, void *buf);
 
+int vm_guest_ram_zero_callback(vm_t *vm, uintptr_t guest_addr, void *vaddr, size_t size, size_t offset, void *buf);
+
 /***
  * @function vm_ram_touch(vm, addr, size, touch_callback, cookie)
  * Touch a series of pages in the guest vm and invoke a callback for each page accessed
@@ -134,3 +136,10 @@ uintptr_t vm_ram_allocate(vm_t *vm, size_t bytes);
  * @param {size_t} size         The size of the RAM region to be free'd
  */
 void vm_ram_free(vm_t *vm, uintptr_t start, size_t bytes);
+
+/***
+ * @function vm_ram_reset(vm)
+ * Mark all regions as un-allocated, collapse them, and set the ram region to 0
+ * @param {vm_t *} vm           A handle to the VM that ram needs to be reset
+ */
+void vm_ram_reset(vm_t *vm);

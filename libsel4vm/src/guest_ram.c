@@ -149,6 +149,12 @@ int vm_guest_ram_write_callback(vm_t *vm, uintptr_t addr, void *vaddr, size_t si
     return 0;
 }
 
+int vm_guest_ram_zero_callback(vm_t *vm, uintptr_t addr, void *vaddr, size_t size, size_t offset, void *buf)
+{
+    memset(vaddr, 0, size);
+    return 0;
+}
+
 static int touch_access_callback(void *access_addr, void *vaddr, void *cookie)
 {
     struct guest_mem_touch_params *guest_touch = (struct guest_mem_touch_params *)cookie;
@@ -432,4 +438,23 @@ int vm_ram_register_at_custom_iterator(vm_t *vm, uintptr_t start, size_t bytes, 
 void vm_ram_free(vm_t *vm, uintptr_t start, size_t bytes)
 {
     return;
+}
+
+void vm_ram_reset(vm_t *vm)
+{
+    vm_mem_t *guest_memory = &vm->mem;
+    int err;
+
+    for (int i = 0; i < guest_memory->num_ram_regions; i++) {
+        guest_memory->ram_regions[i].allocated = 0;
+    }
+    collapse_guest_ram_regions(guest_memory);
+
+    for (int i = 0; i < guest_memory->num_ram_regions; i++) {
+        err = vm_ram_touch(vm, guest_memory->ram_regions[i].start, guest_memory->ram_regions[i].size, vm_guest_ram_zero_callback, NULL);
+        if (err) {
+            ZF_LOGE("failed zeroing guest_memory\n");
+            return;
+        }
+    }
 }

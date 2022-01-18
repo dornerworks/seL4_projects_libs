@@ -274,6 +274,26 @@ int vm_install_vgic(vm_t *vm)
     return 0;
 }
 
+int vm_reset_vgic(vm_t *vm)
+{
+    struct vgic *vgic = vgic_dist->vgic;
+    assert(vgic);
+
+    for (int i = 0; i < vm->num_vcpus; i++) {
+        vgic_vcpu_t *vgic_vcpu = &vgic->vgic_vcpu[i];
+        // memset(vgic_vcpu, 0, sizeof(vgic_vcpu_t));
+
+        vgic_vcpu->irq_queue.head = 0;
+        vgic_vcpu->irq_queue.tail = 0;
+    }
+
+    // TODO: Do we need to clear vgic->vspis as well?
+
+    vgic_dist_reset(vgic_dist);
+
+    return 0;
+}
+
 int vm_vgic_maintenance_handler(vm_vcpu_t *vcpu)
 {
     int idx = seL4_GetMR(seL4_VGICMaintenance_IDX);

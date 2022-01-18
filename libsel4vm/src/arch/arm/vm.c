@@ -42,6 +42,12 @@ static vm_exit_handler_fn_t arm_exit_handlers[] = {
     [VM_UNKNOWN_EXIT] = vm_unknown_exit_handler
 };
 
+int restart = 0;
+void timeout_restart(void)
+{
+    restart = 1;
+}
+
 static int vm_decode_exit(seL4_Word label)
 {
     int exit_reason = VM_UNKNOWN_EXIT;
@@ -159,7 +165,7 @@ static int vm_unknown_exit_handler(vm_vcpu_t *vcpu)
     return VM_EXIT_HANDLE_ERROR;
 }
 
-static int vcpu_stop(vm_vcpu_t *vcpu)
+int vcpu_stop(vm_vcpu_t *vcpu)
 {
     vcpu->vcpu_online = false;
     return seL4_TCB_Suspend(vm_get_vcpu_tcb(vcpu));
@@ -235,7 +241,7 @@ int vm_run_arch(vm_t *vm)
 
     ret = 1;
     /* Loop, handling events */
-    while (ret > 0) {
+    while (1) {
         seL4_MessageInfo_t tag;
 #ifdef CONFIG_KERNEL_MCS
         seL4_MessageInfo_t reply_msg;
@@ -275,6 +281,10 @@ int vm_run_arch(vm_t *vm)
                 ret = -1;
                 vm->run.exit_reason = VM_GUEST_ERROR_EXIT;
             }
+        }
+        if (1 == restart) {
+            restart = 0;
+            return 0;
         }
     }
 

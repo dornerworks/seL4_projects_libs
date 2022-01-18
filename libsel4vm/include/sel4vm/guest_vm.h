@@ -229,6 +229,22 @@ struct vm {
 int vm_run(vm_t *vm);
 
 /***
+ * @function vm_reset(vm_t *vm)
+ * Reset a VM to its initial state
+ * @param {vm_t *} vm   A handle to the VM to run
+ * @return              0 on success, -1 on error
+ */
+ int vm_reset(vm_t *vm);
+
+/***
+ * @function vcpu_stop(vcpu)
+ * Stop a vcpu thread
+ * @param {vm_vcpu_t *} vcpu    A handle to vcpu to stop
+ * @return                      0 on success, -1 on error
+ */
+int vcpu_stop(vm_vcpu_t *vcpu);
+
+/***
  * @function vcpu_start(vcpu)
  * Start an initialised vcpu thread
  * @param {vm_vcpu_t *} vcpu    A handle to vcpu to start
