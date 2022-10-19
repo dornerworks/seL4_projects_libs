@@ -33,6 +33,17 @@ config_option(
     OFF
 )
 
+config_option(
+    LibSel4VMMVirtioCleanCache
+    VMM_PLATSUPPORT_VIRTIO_CLEAN_CACHE
+    "Clean the cache when reading from or writing to guest memory from the virtio
+    emulation layer"
+    DEFAULT
+    OFF
+    DEPENDS
+    "KernelArchARM"
+)
+
 mark_as_advanced(LibSel4VMMPlatsupportVESAFrameBuffer)
 mark_as_advanced(LibSel4VMMUseHPET)
 
