@@ -11,6 +11,8 @@
 #include <sel4/sel4.h>
 
 #include <sel4vm/arch/vmcs_fields.h>
+#include <sel4vm/boot.h>
+#include <processor/cpuid.h>
 
 #include "vmcs.h"
 

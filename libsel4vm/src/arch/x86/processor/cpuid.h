@@ -44,3 +44,17 @@ struct cpuid_val {
     unsigned int edx;
 };
 
+static inline int vmm_get_current_apic_id(void)
+{
+    uint32_t eax, ebx, ecx, edx;
+
+    asm(
+        "cpuid"
+        : "=a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx)
+        : "a"(1), "c"(0)
+    );
+
+    uint32_t apic_id = (ebx & 0xFF000000) >> 24;
+
+    return apic_id;
+}

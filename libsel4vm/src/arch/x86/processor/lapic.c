@@ -512,19 +512,42 @@ int vm_irq_delivery_to_apic(vm_vcpu_t *src_vcpu, struct vm_lapic_irq *irq, unsig
         return vm_apic_set_irq(src_vcpu, irq, dest_map);
     }
 
-    vm_vcpu_t *dest_vcpu = vm->vcpus[BOOT_VCPU];
+    for (i = 0; i < vm->num_vcpus; i++) {
 
-    if (!vm_apic_hw_enabled(dest_vcpu->vcpu_arch.lapic)) {
-        return r;
+        vm_vcpu_t *dest_vcpu = vm->vcpus[i];
+
+        if (!vm_apic_hw_enabled(dest_vcpu->vcpu_arch.lapic)) {
+            ZF_LOGI("Not HW Enabled");
+            continue;
+        }
+
+        if (!vm_apic_match_dest(dest_vcpu, src, irq->shorthand,
+                                irq->dest_id, irq->dest_mode)) {
+            ZF_LOGI("Doesn't Match dest?");
+            continue;
+        }
+
+        if (!vm_is_dm_lowest_prio(irq)) {
+            // Normal delivery
+            ZF_LOGI("Delivery mode is lowest priority");
+            if (r < 0) {
+                r = 0;
+            }
+            r += vm_apic_set_irq(dest_vcpu, irq, dest_map);
+        } else if (vm_apic_enabled(dest_vcpu->vcpu_arch.lapic)) {
+            ZF_LOGI("APIC enabled");
+            // Pick vcpu with lowest priority to deliver to
+            if (!lowest) {
+                lowest = dest_vcpu;
+            } else if (vm_apic_compare_prio(dest_vcpu, lowest) < 0) {
+                lowest = dest_vcpu;
+            }
+        }
     }
 
-    if (!vm_apic_match_dest(dest_vcpu, src, irq->shorthand,
-                            irq->dest_id, irq->dest_mode)) {
-        return r;
-    }
-
-    if (!vm_is_dm_lowest_prio(irq) || (vm_apic_enabled(dest_vcpu->vcpu_arch.lapic))) {
-        r = vm_apic_set_irq(dest_vcpu, irq, dest_map);
+    if (lowest) {
+        ZF_LOGI("Setting irq in destination");
+        r = vm_apic_set_irq(lowest, irq, dest_map);
     }
 
     return r;

@@ -142,6 +142,8 @@ struct vm_vcpu {
     bool vcpu_online;
     /* Architecture specfic vcpu */
     struct vm_vcpu_arch vcpu_arch;
+    /* Host endoint (i.e. vmm) to wait for VM faults and host events */
+    seL4_CPtr host_endpoint;
 };
 
 /***
@@ -234,6 +236,24 @@ int vm_run(vm_t *vm);
  */
 int vcpu_start(vm_vcpu_t *vcpu);
 
+/***
+ * @function vcpu_run(vcpu)
+ * Run an initialised vcpu thread
+ * @param {vm_vcpu_t *} vcpu    A handle to vcpu to start
+ * @return                      0 on success, -1 on error
+ */
+int vcpu_run(vm_vcpu_t *vcpu);
+
+/***
+ * @function vcpu_run_secondary(void *arg0, void *arg1, void *ipc_buf)
+ * Implements the sel4utils_thread_entry_fn function prototype. Used
+ * as an entry point for a secondary cpu.
+ * @param {void *}arg0          Should be a vcpu
+ * @param {void *}arg1          Unused
+ * @param {void *}ipc_buf       Unused
+ */
+void vcpu_run_secondary(void *arg0, void *arg1, void *ipc_buf);
+
 /* Unhandled fault callback registration functions */
 
 /***
@@ -257,3 +277,11 @@ int vm_register_unhandled_mem_fault_callback(vm_t *vm, unhandled_mem_fault_callb
  */
 int vm_register_notification_callback(vm_t *vm, notification_callback_fn notification_callback,
                                       void *cookie);
+
+/***
+ * @function vmm_resume_vcpu(vm_vcpu_t *vcpu)
+ * Resume a vcpu
+ * @param {vm_vcpu_t *} vcpu                                    VCPU to be resumed
+ * @return                                                      0 on success, -1 on error
+ */
+int vmm_resume_vcpu(vm_vcpu_t *vcpu);

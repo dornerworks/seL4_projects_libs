@@ -22,6 +22,10 @@
  */
 #define BOOT_VCPU 0
 
+#define GUEST_VSPACE_ROOT     0x10000000
+#define GUEST_VSPACE_PDPT     0x10001000
+#define GUEST_VSPACE_PD       0x10002000
+
 /***
  * @function vm_init(vm, vka, host_simple, host_vspace, io_ops, host_endpoint, name)
  * Initialise/Create VM

@@ -32,6 +32,10 @@
 #include "processor/lapic.h"
 #include "processor/platfeature.h"
 
+#include <sel4utils/vspace.h>
+#include <sel4utils/stack.h>
+#include <sel4utils/thread.h>
+
 #define VM_VMCS_CR0_MASK           (X86_CR0_PG | X86_CR0_PE)
 #define VM_VMCS_CR0_VALUE          VM_VMCS_CR0_MASK
 /* We need to own the PSE and PAE bits up until the guest has actually turned on paging,
@@ -56,9 +60,7 @@
 
 #define PAGE_MASK 0x7FFFFFFFFF000ULL
 
-#define GUEST_VSPACE_ROOT     0x10000000
-#define GUEST_VSPACE_PDPT     0x10001000
-#define GUEST_VSPACE_PD       0x10002000
+#define THREAD_NAME_LEN 32
 
 static vm_frame_t vspace_alloc_iterator(uintptr_t addr, void *cookie)
 {
@@ -223,37 +225,85 @@ int vm_init_arch(vm_t *vm)
         ZF_LOGE("Failed to assign ASID pool to EPT root");
         return -1;
     }
-    /* Install the guest PD */
-    err = seL4_TCB_SetEPTRoot(simple_get_tcb(vm->simple), vm->mem.vm_vspace_root.cptr);
-    assert(err == seL4_NoError);
     /* Initialize a vspace for the guest */
     err = vm_init_guest_vspace(&vm->mem.vmm_vspace, &vm->mem.vmm_vspace,
                                &vm->mem.vm_vspace, vm->vka, vm->mem.vm_vspace_root.cptr);
-    if (err) {
-        return err;
-    }
-
-    /* Bind our interrupt pending callback */
-    err = seL4_TCB_BindNotification(simple_get_init_cap(vm->simple, seL4_CapInitThreadTCB), vm->host_endpoint);
-    assert(err == seL4_NoError);
     return err;
 }
 
 int vm_create_vcpu_arch(vm_t *vm, vm_vcpu_t *vcpu)
 {
     int err;
-    err = seL4_X86_VCPU_SetTCB(vcpu->vcpu.cptr, simple_get_tcb(vm->simple));
+
+    seL4_CPtr tcb = simple_get_tcb(vm->simple);
+
+    char vmm_thread_name[THREAD_NAME_LEN];
+    snprintf(vmm_thread_name, THREAD_NAME_LEN, "%s:Core%d", vm->vm_name, vcpu->vcpu_id);
+
+    /* Create the guest root vspace only for boot vcpu */
+    if (BOOT_VCPU == vcpu->vcpu_id) {
+        vcpu->host_endpoint = vm->host_endpoint;
+        err = make_guest_address_space(vm);
+        if (err) {
+            return -1;
+        }
+        /* For secondary vcpus, we have to create an entire thread */
+    } else {
+        sel4utils_thread_t fault_thread, new_thread;
+        seL4_CNode cspace = simple_get_cnode(vm->simple);
+
+        sel4utils_thread_config_t config = thread_config_new(vm->simple);
+        vka_object_t endpoint = {0};
+        vka_alloc_endpoint(vm->vka, &endpoint);
+        config = thread_config_fault_endpoint(config, endpoint.cptr);
+        config = thread_config_priority(config, vcpu->tcb.priority);
+        config = thread_config_mcp(config, vcpu->tcb.priority);
+
+        err = sel4utils_start_fault_handler(endpoint.cptr, vm->vka, &vm->mem.vmm_vspace, cspace, 0,
+                                            vmm_thread_name, &fault_thread);
+        seL4_TCB_SetPriority(fault_thread.tcb.cptr, tcb, vcpu->tcb.priority);
+        seL4_TCB_SetAffinity(fault_thread.tcb.cptr, vcpu->vcpu_id);
+        if (err) {
+            ZF_LOGE("Failed to start secondary vmm fault thread");
+            return -1;
+        }
+
+        char vmm_fault_thread_name[THREAD_NAME_LEN];
+        snprintf(vmm_fault_thread_name, THREAD_NAME_LEN, "%s:Core%d:fault_handler",
+                 vm->vm_name, vcpu->vcpu_id);
+        NAME_THREAD(fault_thread.tcb.cptr, vmm_fault_thread_name);
+
+        err = sel4utils_configure_thread_config(vm->vka, &vm->mem.vmm_vspace, &vm->mem.vmm_vspace, config, &new_thread);
+        if (err) {
+            ZF_LOGE("Failed to configure %s", vmm_thread_name);
+            return -1;
+        }
+        err = sel4utils_start_thread(&new_thread,
+                                     (sel4utils_thread_entry_fn)&vcpu_run_secondary, vcpu, NULL, 0);
+
+        vcpu->tcb.tcb.cptr = new_thread.tcb.cptr;
+        tcb = vcpu->tcb.tcb.cptr;
+
+        vka_object_t async_event_notification = {0};
+        vka_alloc_notification(vm->vka, &async_event_notification);
+        vcpu->host_endpoint = async_event_notification.cptr;
+    }
+
+    /* Install the guest PD */
+    err = seL4_TCB_SetEPTRoot(tcb, vm->mem.vm_vspace_root.cptr);
     assert(err == seL4_NoError);
+
+    err = seL4_X86_VCPU_SetTCB(vcpu->vcpu.cptr, tcb);
+    assert(err == seL4_NoError);
+
+    /* Bind our interrupt pending callback */
+    err = seL4_TCB_BindNotification(tcb, vcpu->host_endpoint);
+    assert(err == seL4_NoError);
+
     /* All LAPICs are created enabled, in virtual wire mode */
     vm_create_lapic(vcpu, 1);
     vcpu->vcpu_arch.guest_state = calloc(1, sizeof(guest_state_t));
     if (!vcpu->vcpu_arch.guest_state) {
-        return -1;
-    }
-
-    /* Create the guest root vspace */
-    err = make_guest_address_space(vm);
-    if (err) {
         return -1;
     }
 
@@ -276,5 +326,10 @@ int vm_create_vcpu_arch(vm_t *vm, vm_vcpu_t *vcpu)
     vm_guest_state_set_cr4(vcpu->vcpu_arch.guest_state, vcpu->vcpu_arch.guest_state->virt.cr.cr4_host_bits);
     /* Init guest OS vcpu state. */
     vm_vmcs_init_guest(vcpu);
+
+#ifdef CONFIG_DEBUG_BUILD
+    NAME_THREAD(tcb, vmm_thread_name);
+#endif
+
     return 0;
 }

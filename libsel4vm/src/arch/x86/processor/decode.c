@@ -18,6 +18,7 @@ Author: W.A.
 #include <sel4vm/arch/guest_x86_context.h>
 
 #include "sel4vm/guest_memory.h"
+#include <sel4vm/boot.h>
 
 #include "processor/platfeature.h"
 #include "processor/decode.h"
@@ -170,6 +171,18 @@ int vm_fetch_instruction(vm_vcpu_t *vcpu, uintptr_t eip, uintptr_t cr3,
 
     int extra_instr = 0;
     int read_instr = len;
+
+    if (cr3 == GUEST_VSPACE_ROOT) {
+        /*
+          Page tables initially start at GUEST_VSPACE_ROOT.  If CR3
+          contains this address, we know it is still using the initial
+          1:1 mapping that was initially set up and can therefore use
+          the eip. If CR3 is something else we know that it set up its
+          own page tables.
+         */
+        instr_phys = eip;
+        goto fetch;
+    }
 
     if ((eip >> seL4_PageBits) != ((eip + len) >> seL4_PageBits)) {
         extra_instr = (eip + len) % BIT(seL4_PageBits);
