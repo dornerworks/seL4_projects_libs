@@ -67,4 +67,6 @@ struct vm_arch {
 struct vm_vcpu_arch {
     guest_state_t *guest_state;
     vm_lapic_t *lapic;
+    /* Local APIC */
+    int apic_id;
 };
