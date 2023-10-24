@@ -172,6 +172,11 @@ int vm_fetch_instruction(vm_vcpu_t *vcpu, uintptr_t eip, uintptr_t cr3,
     int extra_instr = 0;
     int read_instr = len;
 
+    if ((eip >> seL4_PageBits) != ((eip + len) >> seL4_PageBits)) {
+        extra_instr = (eip + len) % BIT(seL4_PageBits);
+        read_instr -= extra_instr;
+    }
+
     if (cr3 == GUEST_VSPACE_ROOT) {
         /*
           Page tables initially start at GUEST_VSPACE_ROOT.  If CR3
@@ -182,11 +187,6 @@ int vm_fetch_instruction(vm_vcpu_t *vcpu, uintptr_t eip, uintptr_t cr3,
          */
         instr_phys = eip;
         goto fetch;
-    }
-
-    if ((eip >> seL4_PageBits) != ((eip + len) >> seL4_PageBits)) {
-        extra_instr = (eip + len) % BIT(seL4_PageBits);
-        read_instr -= extra_instr;
     }
 
     if (cr4 & X86_CR4_PAE) {
