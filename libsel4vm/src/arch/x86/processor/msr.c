@@ -162,6 +162,9 @@ int vm_wrmsr_handler(vm_vcpu_t *vcpu)
         /* performance counters not supported. */
         break;
 
+    case MSR_TSC_AUX:
+        break;
+
     case MSR_IA32_APICBASE:
         vm_lapic_set_base_msr(vcpu, val_low);
         break;
