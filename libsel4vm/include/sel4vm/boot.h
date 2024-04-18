@@ -49,7 +49,7 @@ int vm_init(vm_t *vm, vka_t *vka, simple_t *host_simple, vspace_t host_vspace,
  * @param {int} priority    The scheduling priority assigned to the VCPU thread
  * @return                  NULL for error, otherwise pointer to created vm_vcpu_t object
  */
-vm_vcpu_t *vm_create_vcpu(vm_t *vm, int priority);
+vm_vcpu_t *vm_create_vcpu(vm_t *vm, int priority, int period, int budget);
 
 /***
  * @function vm_assign_vcpu_target(vcpu, target_cpu)

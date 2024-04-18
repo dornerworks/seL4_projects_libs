@@ -231,7 +231,7 @@ int vm_init_arch(vm_t *vm)
     return err;
 }
 
-int vm_create_vcpu_arch(vm_t *vm, vm_vcpu_t *vcpu)
+int vm_create_vcpu_arch(vm_t *vm, vm_vcpu_t *vcpu, int period, int budget)
 {
     int err;
 
@@ -253,6 +253,10 @@ int vm_create_vcpu_arch(vm_t *vm, vm_vcpu_t *vcpu)
         seL4_CNode cspace = simple_get_cnode(vm->simple);
 
         sel4utils_thread_config_t config = thread_config_new(vm->simple);
+#ifdef CONFIG_KERNEL_MCS
+        config.sched_params = sched_params_periodic(config.sched_params, vm->simple, vcpu->vcpu_id,
+                                                    period, budget, 0, 0);
+#endif
         vka_object_t endpoint = {0};
         vka_alloc_endpoint(vm->vka, &endpoint);
         config = thread_config_fault_endpoint(config, endpoint.cptr);
@@ -262,7 +266,9 @@ int vm_create_vcpu_arch(vm_t *vm, vm_vcpu_t *vcpu)
         err = sel4utils_start_fault_handler(endpoint.cptr, vm->vka, &vm->mem.vmm_vspace, cspace, 0,
                                             vmm_thread_name, &fault_thread);
         seL4_TCB_SetPriority(fault_thread.tcb.cptr, tcb, vcpu->tcb.priority);
+#if (!defined(CONFIG_KERNEL_MCS) && defined(CONFIG_ENABLE_SMP_SUPPORT))
         seL4_TCB_SetAffinity(fault_thread.tcb.cptr, vcpu->vcpu_id);
+#endif
         if (err) {
             ZF_LOGE("Failed to start secondary vmm fault thread");
             return -1;
