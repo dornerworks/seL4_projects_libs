@@ -56,7 +56,7 @@ static int vm_cpuid_virt(unsigned int function, unsigned int index, struct cpuid
         F(FPU) | 0 /*F(VME)*/ | 0 /*F(DE)*/ | 0/*F(PSE)*/ |
         F(TSC) | 0/*F(MSR)*/ | 0 /*F(PAE)*/ | 0/*F(MCE)*/ |
 #endif /* CONFIG_X86_64_VTX_64BIT_GUESTS */
-        0 /*F(CX8)*/ | F(APIC) | 0 /* Reserved */ | F(SEP) |
+        F(CX8) | F(APIC) | 0 /* Reserved */ | F(SEP) |
         /*F(MTRR)*/ 0 | F(PGE) | 0/*F(MCA)*/ | F(CMOV) |
         0 /*F(PAT)*/ | 0 /* F(PSE36)*/ | 0 /* PSN */ | 0/*F(CLFLSH)*/ |
         0 /* Reserved, DS, ACPI */ | F(MMX) |
@@ -68,9 +68,9 @@ static int vm_cpuid_virt(unsigned int function, unsigned int index, struct cpuid
         F(XMM3) | 0 /*F(PCLMULQDQ)*/ | 0 /* DTES64, MONITOR */ |
         0 /* DS-CPL, VMX, SMX, EST */ |
         0 /* TM2 */ | F(SSSE3) | 0 /* CNXT-ID */ | 0 /* Reserved */ |
-        0 /*F(FMA)*/ | 0 /*F(CX16)*/ | 0 /* xTPR Update, PDCM */ |
+        0 /*F(FMA)*/ | F(CX16) | 0 /* xTPR Update, PDCM */ |
         0 /*F(PCID)*/ | 0 /* Reserved, DCA */ | F(XMM4_1) |
-        F(XMM4_2) | 0 /*F(X2APIC)*/ | 0 /*F(MOVBE)*/ | 0 /*F(POPCNT)*/ |
+        F(XMM4_2) | 0 /*F(X2APIC)*/ | 0 /*F(MOVBE)*/ | F(POPCNT) |
         0 /* Reserved*/ | 0 /*F(AES)*/ | 0/*F(XSAVE)*/ | 0/*F(OSXSAVE)*/ | 0 /*F(AVX)*/ |
         0 /*F(F16C)*/ | 0 /*F(RDRAND)*/;
 
