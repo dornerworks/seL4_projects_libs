@@ -753,6 +753,12 @@ static int apic_reg_write(vm_vcpu_t *vcpu, uint32_t reg, uint32_t val)
         if (vm_apic_get_reg(apic, APIC_LVR) & APIC_LVR_DIRECTED_EOI) {
             mask |= APIC_SPIV_DIRECTED_EOI;
         }
+        /* A new change in the linux kernel temporarily software disables
+         * the local APIC using the APIC_SPIV register.  This causes LVT
+         * entries to become masked and stay masked even after re-enabling.
+         * So reverse the change.
+        */
+        val |= APIC_SPIV_APIC_ENABLED;
         apic_set_spiv(apic, val & mask);
         if (!(val & APIC_SPIV_APIC_ENABLED)) {
             int i;
