@@ -22,7 +22,11 @@
 #include "processor/cpuid.h"
 #include "interrupt.h"
 
+#ifdef CONFIG_INCREASE_TRAMPOLINE
 #define TRAMPOLINE_LENGTH (200)
+#else
+#define TRAMPOLINE_LENGTH (100)
+#endif
 
 static void resume_guest(vm_vcpu_t *vcpu)
 {
