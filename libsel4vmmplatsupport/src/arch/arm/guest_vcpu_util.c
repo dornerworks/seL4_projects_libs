@@ -36,7 +36,7 @@ static void sgi_ack(vm_vcpu_t *vcpu, int irq, void *cookie) {}
 vm_vcpu_t *create_vmm_plat_vcpu(vm_t *vm, int priority)
 {
     int err;
-    vm_vcpu_t *vm_vcpu = vm_create_vcpu(vm, priority);
+    vm_vcpu_t *vm_vcpu = vm_create_vcpu(vm, priority, 0, 0);
     if (vm_vcpu == NULL) {
         ZF_LOGE("Failed to create platform vcpu");
         return NULL;

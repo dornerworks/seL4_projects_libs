@@ -69,7 +69,7 @@ int vm_init_arch(vm_t *vm)
     return err;
 }
 
-int vm_create_vcpu_arch(vm_t *vm, vm_vcpu_t *vcpu)
+int vm_create_vcpu_arch(vm_t *vm, vm_vcpu_t *vcpu, int period, int budget)
 {
     int err;
     seL4_Word null_cap_data = seL4_NilData;
